@@ -1,0 +1,14 @@
+{
+  "permission": {
+    "bash": {
+      ".venv/bin/python *": "allow",
+      "head *": "allow",
+      ".venv/bin/pip *": "allow",
+      "grep *": "allow",
+      "cd *": "allow",
+      ".venv/bin/uv *": "allow",
+      "ls *": "allow",
+      "cat *": "allow"
+    }
+  }
+}

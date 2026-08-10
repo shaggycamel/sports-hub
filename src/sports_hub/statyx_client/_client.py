@@ -1,0 +1,61 @@
+import asyncio
+import aiohttp
+
+
+class StatyxClient:
+    """Thin transport layer: pagination + concurrency. No knowledge of specific endpoints."""
+
+    def __init__(self, api_key: str, max_concurrent: int = 10):
+        self.api_key = api_key
+        self.max_concurrent = max_concurrent
+        self.session: aiohttp.ClientSession | None = None
+
+    async def __aenter__(self):
+        connector = aiohttp.TCPConnector(limit=self.max_concurrent)
+        self.session = aiohttp.ClientSession(
+            connector=connector,
+            headers={"x-api-key": self.api_key}
+        )
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.session.close()
+
+    async def get_paginated(self, url: str, params: dict) -> list:
+        """Fetch every page of one list endpoint call."""
+        rows = []
+        offset = 0
+        while True:
+            page_params = {**params, "limit": 200, "offset": offset}
+            async with self.session.get(url, params=page_params) as r:
+                r.raise_for_status()
+                data = (await r.json())["data"]
+            rows.extend(data)
+            if len(data) < 200:  # last page
+                break
+            offset += 200
+        return rows
+
+    async def get_one(self, url: str, params: dict) -> dict:
+        """Fetch a single-object endpoint (no list, no pagination)."""
+        async with self.session.get(url, params=params) as r:
+            r.raise_for_status()
+            return (await r.json())["data"]
+
+    async def get_many(self, calls: list[tuple], paginated: bool = True) -> list:
+        """
+        Run get_paginated (or get_one, if paginated=False) concurrently across many calls.
+        calls: list of (key, url, params). `key` is just a label attached to the
+        result so callers can match it back up — pass None if there's no key.
+        """
+        fetch = self.get_paginated if paginated else self.get_one
+
+        async def fetch_one(key, url, params):
+            try:
+                result = await fetch(url, params)
+                return key, result, None
+            except aiohttp.ClientError as e:
+                return key, None, str(e)
+
+        tasks = [fetch_one(*call) for call in calls]
+        return await asyncio.gather(*tasks)
