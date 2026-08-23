@@ -25,7 +25,7 @@ class NBAComponent:
         col_order = self.db.read(
             "SELECT column_name FROM util.table_column_order WHERE table_name = 'player_season_stats' ORDER BY column_order",
         )["column_name"].to_list()
-        ls_pl = self.ctx.active_players["id"].to_list()
+        ls_pl = self.ctx.active_players["nba_id"].drop_nulls().to_list()
 
         print("\n--------------------- nba.player_season_stats")
         dfs = []
@@ -54,7 +54,7 @@ class NBAComponent:
         col_order = self.db.read(
             "SELECT column_name FROM util.table_column_order WHERE table_name = 'player_info' ORDER BY column_order",
         )["column_name"].to_list()
-        ls_pl = self.ctx.active_players["id"].to_list()
+        ls_pl = self.ctx.active_players["nba_id"].drop_nulls().to_list()
 
         print("\n--------------------- nba.player_info")
         dfs = []

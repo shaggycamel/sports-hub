@@ -20,7 +20,7 @@ class SportsHub:
 
     def __init__(self, ini_path: str | None = None, db_con: str | None = None, sport: str = "nba", leagues: list[tuple[str, int]] | None = None):
         self.db = Database(ini_path, db_con)
-        self.ctx = Context()
+        self.ctx = Context(self.db)
         self.sport = sport
 
         self.nba = NBAComponent(self.db, self.ctx)

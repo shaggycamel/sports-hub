@@ -19,25 +19,21 @@ class StatyxComponent:
         )["column_name"].to_list()
 
         print("\n--------------------- statyx.schedule")
-        df = self.pipeline.run("schedule") #, params={"season": self.ctx.cur_season_year})
+        df = self.pipeline.run("schedule", params={"season": self.ctx.cur_season_year})
 
         if self.pipeline.errors:
             print("  failed:", self.pipeline.errors)
 
         df = (
             df.clean_names()
-            # .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
+            .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
             .select(col_order)
             .pipe(infer_dtypes)
-            .with_columns(
-                cs.by_dtype(pl.Datetime("us", "UTC")).dt.replace_time_zone(None)
-            )
-            .with_columns((pl.col("season").cast(pl.Utf8) + "-" + (pl.col("season") + 1 - 2000).cast(pl.Utf8)).alias("season"))
+            .with_columns(cs.by_dtype(pl.Datetime("us", "UTC")).dt.replace_time_zone(None) )
         )
 
-        # self.db.write(df, "schedule", schema="statyx")
+        self.db.write(df, "schedule", schema="statyx")
         print("statyx.schedule has been updated\n\n")
-        return df
 
     def get_contracts(self):
         """Player contracts via the Statyx API."""
@@ -68,25 +64,23 @@ class StatyxComponent:
             "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.game_stats' ORDER BY column_order",
         )["column_name"].to_list()
 
-        ls_pl = self.ctx.active_players["id"].to_list()
+        ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
 
         print("\n--------------------- statyx.game_stats")
-        df = self.pipeline.run("game_stats", keys=ls_pl)#, params={"season": self.ctx.cur_season_year}, keys=ls_pl)
+        df = self.pipeline.run("game_stats", params={"season": self.ctx.cur_season_year}, keys=ls_pl)
 
         if self.pipeline.errors:
             print(f"  {len(self.pipeline.errors)} player(s) failed:", self.pipeline.errors)
 
         df = (
             df.clean_names()
-            # .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
+            .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
             .select(col_order)
             .pipe(infer_dtypes)
-            .with_columns((pl.col("season").cast(pl.Utf8) + "-" + (pl.col("season") + 1 - 2000).cast(pl.Utf8)).alias("season"))
         )
 
-        # self.db.write(df, "game_stats", schema="statyx")
+        self.db.write(df, "game_stats", schema="statyx")
         print("statyx.game_stats has been updated\n\n")
-        return df
 
     def get_advanced_stats(self):
         """Advanced per-game stats via the Statyx API."""
@@ -94,23 +88,28 @@ class StatyxComponent:
             "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.advanced_stats' ORDER BY column_order",
         )["column_name"].to_list()
 
-        ls_pl = self.ctx.active_players["id"].to_list()
+        ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
+        since_dt = str(
+            self.db.read('SELECT MAX(game_date) FROM statyx.advanced_stats')
+            .with_columns((pl.col('max') + pl.duration(days=1)))
+            [0,0]
+        )
 
         print("\n--------------------- statyx.advanced_stats")
-        df = self.pipeline.run("advanced_stats", keys=ls_pl)#, params={"season": self.ctx.cur_season_year}, keys=ls_pl)
+        df = self.pipeline.run("advanced_stats", params={"since": since_dt}, keys=ls_pl)
 
         if self.pipeline.errors:
             print(f"  {len(self.pipeline.errors)} player(s) failed:", self.pipeline.errors)
 
         df = (
             df.clean_names()
+            .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
             .select(col_order)
             .pipe(infer_dtypes)
         )
 
-        # self.db.write(df, "advanced_stats", schema="statyx")
+        self.db.write(df, "advanced_stats", schema="statyx")
         print("statyx.advanced_stats has been updated\n\n")
-        return df
 
     def get_standings(self):
         """League standings via the Statyx API."""
@@ -127,17 +126,15 @@ class StatyxComponent:
         df = (
             df.clean_names()
             .with_columns([
-                # pl.lit(self.ctx.cur_season).alias("season"),
-                pl.lit(self.ctx.date_est).alias("date") # alter to be max game date for each season
+                pl.lit(self.ctx.cur_season).alias("season"),
+                pl.lit(self.ctx.date_est).alias("date")
             ])
             .select(col_order)
             .pipe(infer_dtypes)
-            .with_columns((pl.col("season").cast(pl.Utf8) + "-" + (pl.col("season") + 1 - 2000).cast(pl.Utf8)).alias("season"))
         )
 
-        # self.db.write(df, "standings", schema="statyx")
+        self.db.write(df, "standings", schema="statyx")
         print("statyx.standings has been updated\n\n")
-        return df
 
     def get_play_types(self):
         """Player play types via the Statyx API."""
@@ -145,10 +142,10 @@ class StatyxComponent:
             "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.play_types' ORDER BY column_order",
         )["column_name"].to_list()
 
-        ls_pl = self.ctx.active_players["id"].to_list()
+        ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
 
         print("\n--------------------- statyx.play_types")
-        df = self.pipeline.run("play_types", params={"season": self.ctx.cur_season_year}, keys=ls_pl)
+        df = self.pipeline.run("play_types", params={"season": self.ctx.cur_season}, keys=ls_pl)
 
         if self.pipeline.errors:
             print(f"  {len(self.pipeline.errors)} player(s) failed:", self.pipeline.errors)
@@ -159,9 +156,8 @@ class StatyxComponent:
             .pipe(infer_dtypes)
         )
 
-        # self.db.write(df, "play_types", schema="statyx")
+        self.db.write(df, "play_types", schema="statyx")
         print("statyx.play_types has been updated\n\n")
-        return df
 
     def get_shot_zones(self):
         """Player shot-zones via the Statyx API."""
@@ -169,7 +165,7 @@ class StatyxComponent:
             "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.shot_zones' ORDER BY column_order",
         )["column_name"].to_list()
 
-        ls_pl = self.ctx.active_players["id"].to_list()
+        ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
 
         print("\n--------------------- statyx.shot_zones")
         df = self.pipeline.run("shot_zones", params={"season": self.ctx.cur_season_year}, keys=ls_pl)
@@ -184,7 +180,6 @@ class StatyxComponent:
             .pipe(infer_dtypes)
         )
 
-        # self.db.write(df, "shot_zones", schema="statyx")
+        self.db.write(df, "shot_zones", schema="statyx")
         print("statyx.shot_zones has been updated\n\n")
-        return df
 

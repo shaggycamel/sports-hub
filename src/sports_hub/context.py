@@ -13,7 +13,7 @@ class Context:
     or reaching into a shared god-object.
     """
 
-    def __init__(self):
+    def __init__(self, db_con):
         self.cur_season = nba_parameters.Season.current_season
         self.cur_season_year = int(nba_parameters.Season.current_season[0:4])
         self.prev_season = nba_parameters.Season.previous_season
@@ -21,4 +21,4 @@ class Context:
         self.date_est = dt.datetime.now(zoneinfo.ZoneInfo("America/New_York")).date()
         self.timestamp_utc = dt.datetime.now(zoneinfo.ZoneInfo("UTC"))
         self.nba_teams = pl.DataFrame(teams.get_teams())
-        self.active_players = pl.DataFrame(players.get_active_players())
+        self.active_players = db_con.read('SELECT * FROM util.nba_fty_name_match WHERE is_active')
