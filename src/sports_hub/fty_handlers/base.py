@@ -1,7 +1,5 @@
 import polars as pl
 
-from sports_hub.db import Database
-
 
 class FtyHandler:
     """
@@ -14,7 +12,7 @@ class FtyHandler:
     per-combination details itself.
     """
 
-    def __init__(self, db: Database):
+    def __init__(self, db):
         self.db = db
 
     def connect(self, league_id: int, season_year: int, creds: dict):

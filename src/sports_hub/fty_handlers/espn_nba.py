@@ -4,8 +4,6 @@ import espn_api.basketball as bb
 
 from sports_hub.fty_handlers.base import FtyHandler
 
-PLATFORM = "cockroach"
-
 
 class EspnNbaHandler(FtyHandler):
     NAME = "ESPN"
@@ -58,7 +56,6 @@ class EspnNbaHandler(FtyHandler):
     def get_league_matchup(self, con) -> pl.DataFrame:
         df_byes = self.db.read(
             f"SELECT * FROM fty.league_byes WHERE platform = 'ESPN' AND season = '{con.season}' AND league_id = {con.league_id}",
-            PLATFORM,
         )
 
         dfs = []
@@ -128,7 +125,6 @@ class EspnNbaHandler(FtyHandler):
 
         df_already_done = self.db.read(
             f"SELECT * FROM fty.recent_activity WHERE season = '{con.season}' AND platform = 'ESPN' AND league_id = {con.league_id}",
-            PLATFORM,
         )
         return pl.DataFrame(dfs).join(df_already_done, on=df_already_done.columns, how="anti")
 
@@ -136,7 +132,6 @@ class EspnNbaHandler(FtyHandler):
         box_scores = con.box_scores(matchup_period=con.currentMatchupPeriod)
         league_cats = self.db.read(
             f"SELECT * FROM fty.league_categories WHERE platform = 'ESPN' AND season = '{con.season}' AND league_id = {con.league_id}",
-            PLATFORM,
         )
         stats = league_cats["category"].to_list()
 
@@ -163,7 +158,7 @@ class EspnNbaHandler(FtyHandler):
                     )
 
         cat_labels = league_cats.join(
-            self.db.read("SELECT * FROM fty.category_label", PLATFORM),
+            self.db.read("SELECT * FROM fty.category_label"),
             how="left",
             left_on="category",
             right_on="fty_category",

@@ -7,7 +7,7 @@ BASE_URLS = {
     "nfl":    f"{API_ROOT}/nfl",
     "mlb":    f"{API_ROOT}/mlb",
     "wnba":   f"{API_ROOT}/wnba",
-    "soccer": f"{API_ROOT}/football",  # Statyx uses "football" in the URL path
+    "football": f"{API_ROOT}/football", 
 }
 
 ENDPOINTS = {
@@ -59,7 +59,7 @@ ENDPOINTS = {
         "defense_vs_position": {"path": "/defense-vs-position",      "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "injuries":       {"path": "/injuries",                      "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
     },
-    "soccer": {
+    "football": {
         "game_stats":     {"path": "/players/{key}/game-stats",      "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
         "season_stats":   {"path": "/players/{key}/season-stats",    "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
         "shotmap":        {"path": "/players/{key}/shotmap",         "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},

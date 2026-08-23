@@ -18,10 +18,15 @@ class SportsHub:
         hub.statyx.get_player_advanced_stats()
     """
 
-    def __init__(self, ini_path: str | None = None, statyx_sport: str = "nba"):
-        self.db = Database(ini_path)
+    def __init__(self, ini_path: str | None = None, db_con: str | None = None, sport: str = "nba", leagues: list[tuple[str, int]] | None = None):
+        self.db = Database(ini_path, db_con)
         self.ctx = Context()
+        self.sport = sport
 
         self.nba = NBAComponent(self.db, self.ctx)
-        # self.fty = FtyComponent(self.db, self.ctx)
-        self.statyx = StatyxComponent(self.db, self.ctx, sport=statyx_sport)
+
+        # todo: TEST FTY STUFF ON ACTUAL LEAGUES
+        self.fty = FtyComponent(self.db, self.ctx, sport, leagues or [])
+
+        # todo: Supplement util.id_match table with player active field and statyx id 
+        self.statyx = StatyxComponent(self.db, self.ctx, sport=sport)

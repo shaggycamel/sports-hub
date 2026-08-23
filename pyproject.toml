@@ -20,6 +20,7 @@ dependencies = [
     "pandas",
     "sqlalchemy-cockroachdb>=2.0.4",
     "psycopg2>=2.9.12",
+    "pyarrow>=25.0.1",
 ]
 
 [build-system]

@@ -8,56 +8,53 @@ TIMEOUT = 3 * 60  # connection timeout, seconds
 
 class Database:
     """
-    Owns connection credentials and engines for every platform/section in
-    credentials.ini (e.g. 'cockroach' for nba_con, 'fty' for fty_con). Every
-    component (NBA, fty, statyx) reads/writes through this one object rather
-    than opening its own connections — this is the thing that unifies them.
-
-    Engines are created lazily and cached per platform, so asking for the
-    same platform twice reuses the same engine instead of reconnecting.
+    Owns connection credentials and a single SQLAlchemy engine for one
+    database platform (identified by a section in credentials.ini).
+    Every component (NBA, fty, statyx) reads/writes through this one
+    object rather than opening its own connections.
     """
 
-    def __init__(self, ini_path: str | None = None):
+    def __init__(self, ini_path: str | None = None, db_con: str | None = None):
         self.ini_path = ini_path or os.path.join(os.getcwd(), "credentials.ini")
-        self._engines: dict[str, sqlalchemy.Engine] = {}
+        self.engine: sqlalchemy.Engine | None = None
+        if db_con:
+            self.connect(db_con)
+        else:
+            msg = "Database: no connection specified — call db.connect(db_con) to connect"
+            self.engine = msg
+            print(msg)
 
-    def connect(self, platform: str) -> sqlalchemy.Engine:
-        """Get (or lazily create) the SQLAlchemy engine for a credentials.ini section."""
-        if platform not in self._engines:
-            self._engines[platform] = self._build_engine(platform)
-        return self._engines[platform]
-
-    def _build_engine(self, platform: str) -> sqlalchemy.Engine:
+    def connect(self, db_con: str) -> None:
+        """Build and store the engine for a credentials.ini section."""
         parser = configparser.ConfigParser()
         parser.read(self.ini_path)
-        if not parser.has_section(platform):
-            raise ValueError(f"No [{platform}] section found in {self.ini_path}")
+        if not parser.has_section(db_con):
+            raise ValueError(f"No [{db_con}] section found in {self.ini_path}")
 
-        db_creds = dict(parser.items(platform))
+        db_creds = dict(parser.items(db_con))
         sql_url = "dialect://user:password@host:port/database"
         for key, value in db_creds.items():
             sql_url = sql_url.replace(key, value)
 
-        return sqlalchemy.create_engine(sql_url, connect_args={"connect_timeout": TIMEOUT})
+        self.engine = sqlalchemy.create_engine(sql_url, connect_args={"connect_timeout": TIMEOUT})
 
-    def read(self, query: str, platform: str, **kwargs) -> pl.DataFrame:
-        """Convenience wrapper: run a SQL query, get a Polars DataFrame back.
+    def read(self, query: str, **kwargs) -> pl.DataFrame:
+        """Run a SQL query, get a Polars DataFrame back.
         Extra kwargs (e.g. schema_overrides) pass through to pl.read_database."""
-        return pl.read_database(query, self.connect(platform), **kwargs)
+        return pl.read_database(query, self.engine, **kwargs)
 
     def write(
         self,
         df: pl.DataFrame,
         table: str,
         schema: str,
-        platform: str,
         if_exists: str = "append",
     ) -> None:
-        """Convenience wrapper: write a Polars DataFrame to a table."""
-        df.write_database(f"{schema}.{table}", self.connect(platform), if_table_exists=if_exists)
+        """Write a Polars DataFrame to a table."""
+        df.write_database(f"{schema}.{table}", self.engine, if_table_exists=if_exists)
 
-    def execute(self, statement: str, platform: str) -> None:
+    def execute(self, statement: str) -> None:
         """Run a non-SELECT statement (e.g. DELETE) and commit."""
-        with self.connect(platform).connect() as conn:
+        with self.engine.connect() as conn:
             conn.execute(sqlalchemy.sql.text(statement))
             conn.commit()

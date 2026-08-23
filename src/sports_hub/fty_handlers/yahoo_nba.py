@@ -5,8 +5,6 @@ from yfpy.query import YahooFantasySportsQuery as yfpy
 
 from sports_hub.fty_handlers.base import FtyHandler
 
-PLATFORM = "cockroach"
-
 
 class YahooNbaHandler(FtyHandler):
     NAME = "Yahoo"
@@ -139,7 +137,6 @@ class YahooNbaHandler(FtyHandler):
 
         df_already_done = self.db.read(
             f"SELECT * FROM fty.recent_activity WHERE season = '{con.season}' AND platform = 'Yahoo' AND league_id = {con.league_id}",
-            PLATFORM,
         )
         return pl.DataFrame(dfs).join(df_already_done, on=df_already_done.columns, how="anti")
 
@@ -182,7 +179,7 @@ class YahooNbaHandler(FtyHandler):
                     AND '{dt.date.today()}' BETWEEN week_start AND week_end
             ) AS ls ON gs.game_date BETWEEN ls.week_start AND ls.week_end
         """
-        box_scores = self.db.read(qry, PLATFORM)
+        box_scores = self.db.read(qry)
 
         dfs = []
         for competitor in con.get_league_teams():

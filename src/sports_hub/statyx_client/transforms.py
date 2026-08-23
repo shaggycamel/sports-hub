@@ -1,3 +1,5 @@
+import datetime as dt
+
 import polars as pl
 import polars.selectors as cs
 
@@ -34,6 +36,7 @@ def infer_dtypes(df: pl.DataFrame, threshold: float = 1.0) -> pl.DataFrame:
             pl.col(name).cast(pl.Float64, strict=False),
             pl.col(name).str.to_date(strict=False),
             pl.col(name).str.to_datetime(strict=False),
+            pl.col(name).str.to_datetime(strict=False, time_zone="UTC"),
         ):
             try:
                 casted = df.select(parse)[name]
@@ -43,5 +46,13 @@ def infer_dtypes(df: pl.DataFrame, threshold: float = 1.0) -> pl.DataFrame:
             if casted.null_count() <= col.null_count() + n * (1 - threshold):
                 df = df.with_columns(parse)
                 break
+
+    # Downcast Datetime columns to Date if every time component is midnight
+    for name in df.select(cs.datetime()).columns:
+        col = df[name]
+        if col.drop_nulls().len() == 0:
+            continue
+        if (col.dt.time().drop_nulls() == dt.time(0, 0)).all():
+            df = df.with_columns(pl.col(name).dt.date().alias(name))
 
     return df

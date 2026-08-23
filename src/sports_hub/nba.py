@@ -12,16 +12,11 @@ import nbainjuries
 import nba_api.stats.endpoints as nba_ep
 import tabula
 
-from sports_hub.db import Database
-from sports_hub.context import Context
-
-PLATFORM = "cockroach"  # credentials.ini section this component reads/writes through
-
 
 class NBAComponent:
     """Official NBA stats — writes into the nba.* schema."""
 
-    def __init__(self, db: Database, ctx: Context):
+    def __init__(self, db, ctx):
         self.db = db
         self.ctx = ctx
 
@@ -29,7 +24,6 @@ class NBAComponent:
         """Season stats (totals)"""
         col_order = self.db.read(
             "SELECT column_name FROM util.table_column_order WHERE table_name = 'player_season_stats' ORDER BY column_order",
-            PLATFORM,
         )["column_name"].to_list()
         ls_pl = self.ctx.active_players["id"].to_list()
 
@@ -53,13 +47,12 @@ class NBAComponent:
             .select(col_order)
         )
 
-        self.db.write(df, "player_season_stats", schema="nba", platform=PLATFORM)
+        self.db.write(df, "player_season_stats", schema="nba")
         print("nba.player_season_stats has been updated\n\n")
 
     def get_player_info(self):
         col_order = self.db.read(
             "SELECT column_name FROM util.table_column_order WHERE table_name = 'player_info' ORDER BY column_order",
-            PLATFORM,
         )["column_name"].to_list()
         ls_pl = self.ctx.active_players["id"].to_list()
 
@@ -100,28 +93,25 @@ class NBAComponent:
             .select(col_order)
         )
 
-        self.db.write(df, "player_info", schema="nba", platform=PLATFORM)
+        self.db.write(df, "player_info", schema="nba")
         print("nba.player_info has been updated\n\n")
 
     def get_team_injuries(self, force_date=None):
         dt_est = self.ctx.date_est if force_date is None else force_date
         col_order = self.db.read(
             "SELECT column_name FROM util.table_column_order WHERE table_name = 'injuries' ORDER BY column_order",
-            PLATFORM,
         )["column_name"].to_list()
 
         teams_true = self.db.read(
             "SELECT CONCAT(team_long, ' ', team_name) AS team, team_slug FROM nba.teams",
-            PLATFORM,
         )
 
         game_ids = self.db.read(
             f"SELECT game_date, game_id, matchup FROM nba.league_game_schedule WHERE game_date BETWEEN '{dt_est}' AND '{dt_est + dt.timedelta(days=2)}' AND matchup LIKE '%@%'",
-            PLATFORM,
         )
 
         player_ids = self.db.read(
-            "SELECT nba_name, nba_id FROM util.nba_fty_name_match", PLATFORM
+            "SELECT nba_name, nba_id FROM util.nba_fty_name_match"
         ).with_columns(
             pl.col("nba_name").str.normalize("NFKD").str.replace_all("[^\\x00-\\x7F]", "")
         )
@@ -170,32 +160,29 @@ class NBAComponent:
             player_name = row["player_name"].replace("'", "''")
             self.db.execute(
                 f"DELETE FROM nba.injuries WHERE game_date = '{game_date}' AND game_id = {game_id} AND player_name = '{player_name}'",
-                PLATFORM,
+
             )
 
-        self.db.write(df, "injuries", schema="nba", platform=PLATFORM)
+        self.db.write(df, "injuries", schema="nba")
         print("nba.injuries has been updated\n\n")
 
     def get_player_box_score(self):
         bs_max_dt = (
             self.db.read(
                 "select max(game_date) from nba.nba_player_box_score_vw where min is not null",
-                PLATFORM,
+
             )
             .item()
             .strftime("%Y-%m-%d")
         )
         game_ids = self.db.read(
             f"SELECT DISTINCT game_id FROM nba.league_game_schedule WHERE game_date > '{bs_max_dt}' AND game_date <= '{self.ctx.date_est}'",
-            PLATFORM,
         )
         cols_trad = self.db.read(
             "select * from util.table_column_order where table_name = 'player_box_score_traditional' order by column_order",
-            PLATFORM,
         )
         cols_adv = self.db.read(
             "select * from util.table_column_order where table_name = 'player_box_score_advanced' order by column_order",
-            PLATFORM,
         )
 
         print("\n--------------------- nba.player_box_score")
@@ -262,29 +249,26 @@ class NBAComponent:
             dfs.append(bst.join(bsa, on=["game_id", "player_id"], how="left"))
 
         df = pl.concat(dfs)
-        self.db.write(df, "player_box_score", schema="nba", platform=PLATFORM)
+        self.db.write(df, "player_box_score", schema="nba")
         print("nba.player_box_score have been updated\n\n")
 
     def get_team_box_score(self):
         bs_max_dt = (
             self.db.read(
                 "select max(game_date) from nba.nba_team_box_score_vw where min is not null",
-                PLATFORM,
+
             )
             .item()
             .strftime("%Y-%m-%d")
         )
         game_ids = self.db.read(
             f"SELECT DISTINCT game_id FROM nba.league_game_schedule WHERE game_date > '{bs_max_dt}' AND game_date <= '{self.ctx.date_est}'",
-            PLATFORM,
         )
         cols_trad = self.db.read(
             "select * from util.table_column_order where table_name = 'team_box_score_traditional' order by column_order",
-            PLATFORM,
         )
         cols_adv = self.db.read(
             "select * from util.table_column_order where table_name = 'team_box_score_advanced' order by column_order",
-            PLATFORM,
         )
 
         print("\n--------------------- nba.team_box_score")
@@ -368,13 +352,12 @@ class NBAComponent:
             dfs.append(bst.join(bsa, on=["game_id", "team_id"], how="left"))
 
         df = pl.concat(dfs)
-        self.db.write(df, "team_box_score", schema="nba", platform=PLATFORM)
+        self.db.write(df, "team_box_score", schema="nba")
         print("nba.team_box_score have been updated\n\n")
 
     def update_past_game_schedule(self, season="current"):
         col_order = self.db.read(
             "SELECT column_name FROM util.table_column_order WHERE table_name = 'league_game_schedule' ORDER BY column_order",
-            PLATFORM,
         )["column_name"].to_list()
 
         if season == "current":
@@ -443,24 +426,21 @@ class NBAComponent:
 
         self.db.execute(
             f"DELETE FROM nba.league_game_schedule WHERE season = '{self.ctx.cur_season}'",
-            PLATFORM,
         )
 
-        self.db.write(df, "league_game_schedule", schema="nba", platform=PLATFORM)
+        self.db.write(df, "league_game_schedule", schema="nba")
         print("nba.historical_game_schedule has been updated\n\n")
 
     def get_next_game_schedule(self):
         request = requests.get("https://cdn.nba.com/static/json/staticData/scheduleLeagueV2_1.json")
-        key_dates = self.db.read("SELECT * FROM nba.key_dates", PLATFORM)
+        key_dates = self.db.read("SELECT * FROM nba.key_dates")
         col_order = self.db.read(
             "SELECT column_name FROM util.table_column_order WHERE table_name = 'league_game_schedule' ORDER BY column_order",
-            PLATFORM,
         )["column_name"].to_list()
 
         # Remove games already played this season - This assumes update_past_game_schedule is run first
         df_played_games = self.db.read(
             f"SELECT * FROM nba.league_game_schedule WHERE season = '{self.ctx.cur_season}' AND team_winner IS NOT NULL",
-            PLATFORM,
         )
 
         dfs = []
@@ -535,13 +515,12 @@ class NBAComponent:
             )
         )
 
-        self.db.write(df, "league_game_schedule", schema="nba", platform=PLATFORM)
+        self.db.write(df, "league_game_schedule", schema="nba")
         print("nba.current_game_schedule has been updated\n\n")
 
     def get_team_roster(self, pre_season=False):
         col_order = self.db.read(
             "SELECT column_name FROM util.table_column_order WHERE table_name = 'team_roster' ORDER BY column_order",
-            PLATFORM,
         )["column_name"].to_list()
         teams = self.ctx.nba_teams["id"].to_list()
 
@@ -576,12 +555,12 @@ class NBAComponent:
         )
 
         if pre_season:
-            self.db.write(df, "team_roster", schema="nba", platform=PLATFORM)
+            self.db.write(df, "team_roster", schema="nba")
             print("nba.team_roster has been updated\n\n")
         else:
             df_existing = self.db.read(
                 f"SELECT * FROM nba.team_roster WHERE season = '{self.ctx.cur_season}' AND exit_date IS NULL",
-                PLATFORM,
+
                 schema_overrides={
                     "team_id": pl.Int64,
                     "player_id": pl.Int64,
@@ -615,10 +594,10 @@ class NBAComponent:
 
                 self.db.execute(
                     f"DELETE FROM nba.team_roster WHERE season = '{self.ctx.cur_season}' AND player_id IN ({del_ids}) AND exit_date IS NULL",
-                    PLATFORM,
+    
                 )
 
-                self.db.write(df_traded, "team_roster", schema="nba", platform=PLATFORM)
+                self.db.write(df_traded, "team_roster", schema="nba")
                 print("nba.team_roster traded players have been updated\n\n")
             else:
                 print("nba.team_roster: nothing to update\n\n")
