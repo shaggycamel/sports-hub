@@ -1,3 +1,4 @@
+import polars as pl
 from sports_hub.db import Database
 from sports_hub.context import Context
 from sports_hub.nba import NBAComponent
@@ -18,7 +19,7 @@ class SportsHub:
         hub.statyx.get_player_advanced_stats()
     """
 
-    def __init__(self, ini_path: str | None = None, db_con: str | None = None, sport: str = "nba", leagues: list[tuple[str, int]] | None = None):
+    def __init__(self, ini_path: str | None = None, db_con: str | None = None, sport: str = "nba", leagues: pl.DataFrame | None = None):
         self.db = Database(ini_path, db_con)
         self.ctx = Context(self.db)
         self.sport = sport
@@ -26,7 +27,5 @@ class SportsHub:
         self.nba = NBAComponent(self.db, self.ctx)
 
         # todo: TEST FTY STUFF ON ACTUAL LEAGUES
-        self.fty = FtyComponent(self.db, self.ctx, sport, leagues or [])
-
-        # todo: Supplement util.id_match table with player active field and statyx id 
+        self.fty = FtyComponent(self.db, self.ctx, sport, leagues if leagues is not None else pl.DataFrame())
         self.statyx = StatyxComponent(self.db, self.ctx, sport=sport)
