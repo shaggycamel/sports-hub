@@ -114,8 +114,37 @@ class FtyComponent:
             dfs.append(getattr(handler, method_name)(con))
         return dfs
 
+    def get_league(self):
+        if not self.leagues:
+            print(f"No leagues connected — skipping get_league")
+            return
+
+        self.db.execute(
+            f"DELETE FROM fty.league "
+            f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
+        )
+        df = pl.concat(self._dispatch("get_league"))
+        self.db.write(df, "league", schema="fty")
+        print("fty.league has been updated\n\n")
+ 
+    def get_league_categories(self):
+        if not self.leagues:
+            print(f"No leagues connected — skipping get_league_categories")
+            return
+
+        self.db.execute(
+            f"DELETE FROM fty.league_categories "
+            f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
+        )
+        df = pl.concat(self._dispatch("get_league_categories"))
+        self.db.write(df, "league_categories", schema="fty")
+        print("fty.league_categories has been updated\n\n")
+
     def get_free_agents(self):
-        league_ids = {league_id for _, _, league_id in self.leagues}
+        if not self.leagues:
+            print(f"No leagues connected — skipping get_free_agents")
+            return
+
         self.db.execute(
             f"DELETE FROM fty.free_agents "
             f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
@@ -125,6 +154,10 @@ class FtyComponent:
         print("fty.free_agents has been updated\n\n")
 
     def get_league_competitor(self):
+        if not self.leagues:
+            print(f"No leagues connected — skipping get_league_competitor")
+            return
+
         self.db.execute(
             f"DELETE FROM fty.league_competitor "
             f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
@@ -134,6 +167,10 @@ class FtyComponent:
         print("\nfty.league_competitor has been updated\n\n")
 
     def get_league_matchup(self):
+        if not self.leagues:
+            print(f"No leagues connected — skipping get_league_matchup")
+            return
+
         self.db.execute(
             "DELETE FROM fty.league_matchup "
             f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
@@ -142,7 +179,11 @@ class FtyComponent:
         self.db.write(df, "league_matchup", schema="fty")
         print("fty.league_matchup has been updated\n\n")
 
-    def get_competitor_roster(self):
+    def get_matchup_box_score(self):
+        if not self.leagues:
+            print(f"No leagues connected — skipping get_matchup_box_score")
+            return
+
         col_order = self.db.read(
             "SELECT column_name "
             "FROM util.table_column_order "
@@ -180,6 +221,10 @@ class FtyComponent:
         # Kept per-league (not batched into one _dispatch call) since leagues
         # can be on different matchup periods — matches the original
         # method's own comment about why this stays league-specific.
+        if not self.leagues:
+            print(f"No leagues connected — skipping get_matchup_box_score")
+            return
+
         for (sport, platform, league_id), con in self.leagues.items():
             print(f"\n--------------------- {platform};{league_id} fty.matchup_box_score")
             handler = self.handlers[(sport, platform)]

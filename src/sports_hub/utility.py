@@ -1,5 +1,40 @@
 import difflib
 import polars as pl
+from sqlalchemy import text
+from pathlib import Path
+from yfpy.query import YahooFantasySportsQuery  as yfpy
+
+
+def deduplicate_tables(db_con):
+
+    # ----------------------- Tables
+    df_tables = pl.read_database(
+        """
+        SELECT DISTINCT table_schema, table_name
+        FROM information_schema.columns
+        WHERE column_name = 'season'
+            AND table_name NOT LIKE '%%_vw'
+            AND table_name NOT ILIKE '%%_retired'
+        """,
+            db_con.db_con,
+    )
+
+    ls_tables = list(df_tables.get_column('table_schema') + '.' + df_tables.get_column('table_name'))
+        
+    # ----------------------- Dedup block
+    db_ex = db_con.db_con.connect()
+    for table in ls_tables:
+        df = pl.read_database(
+            f"SELECT * FROM {table} WHERE season = '{db_con.cur_season}'",
+            db_con.db_con,
+            infer_schema_length=None,
+        )
+
+        if df.unique().height != df.height:
+            db_ex.execute(text(f"DELETE FROM {table} WHERE season = '{db_con.cur_season}'"))
+            db_ex.commit()
+            df.unique().write_database(table, db_con.db_con, if_table_exists='append')
+            print("------------", table, " has been deduplicated")
 
 
 def name_match(
@@ -79,3 +114,21 @@ def name_match(
         df = pl.concat([df, df_unmatched], how="diagonal")
 
     return df
+
+
+def generate_yahoo_access_token(league):
+    """ TODO """
+
+    # Enter correct info
+    query =  yfpy(
+        league_id=league.league_id,
+        game_code="nba",
+        yahoo_consumer_key=league.yahoo_consumer_key,
+        yahoo_consumer_secret=league.yahoo_consumer_secret,
+    )
+
+    # Instead of saving here, overwrite entry in database
+    query.save_access_token_data_to_env_file(
+        # env_file_location=Path('/Users/fred/git/nba_cockroach_db'), 
+        # save_json_to_var_only=True
+    )

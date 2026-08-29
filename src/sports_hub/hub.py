@@ -25,7 +25,5 @@ class SportsHub:
         self.sport = sport
 
         self.nba = NBAComponent(self.db, self.ctx)
-
-        # todo: TEST FTY STUFF ON ACTUAL LEAGUES
         self.fty = FtyComponent(self.db, self.ctx, sport, leagues if leagues is not None else pl.DataFrame())
         self.statyx = StatyxComponent(self.db, self.ctx, sport=sport)
