@@ -1,6 +1,7 @@
 import datetime as dt
 import polars as pl
 import espn_api.basketball as bb
+from espn_api.basketball.constant import STATS_MAP
 
 from sports_hub.fty_handlers.base import FtyHandler
 
@@ -18,6 +19,35 @@ class EspnNbaHandler(FtyHandler):
         )
         con.season = f"{season_year}-{str(season_year + 1)[-2:]}"
         return con
+
+    def get_league(self, con) -> pl.DataFrame:
+        return pl.DataFrame(
+            [
+                {
+                    "season": con.season,
+                    "platform": self.NAME,
+                    "league_id": con.league_id,
+                    "league_name": con.settings.name,
+                    "scoring_type": con.settings.scoring_type,
+                    "team_count": con.settings.team_count,
+                }
+            ]
+        )
+ 
+    def get_league_categories(self, con) -> pl.DataFrame:
+        dfs = []
+        for item in con.settings._raw_scoring_settings.get("scoringItems", []):
+            stat_id = str(item["statId"])
+            dfs.append(
+                {
+                    "season": con.season,
+                    "platform": self.NAME,
+                    "league_id": con.league_id,
+                    "category": STATS_MAP.get(stat_id, f"unknown({stat_id})"),
+                    "points": item.get("points") if con.settings.scoring_type == "H2H_POINTS" else None,
+                }
+            )
+        return pl.DataFrame(dfs)
 
     def get_free_agents(self, con) -> pl.DataFrame:
         dfs = []

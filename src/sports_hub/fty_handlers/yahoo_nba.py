@@ -23,6 +23,49 @@ class YahooNbaHandler(FtyHandler):
         con.season = f"{season_year}-{str(season_year + 1)[-2:]}"
         return con
 
+    def get_league(self, con) -> pl.DataFrame:
+        info = con.get_league_info()
+        return pl.DataFrame(
+            [
+                {
+                    "season": con.season,
+                    "platform": self.NAME,
+                    "league_id": con.league_id,
+                    "league_name": info.name,
+                    "scoring_type": info.scoring_type,
+                    "team_count": int(info.num_teams),
+                }
+            ]
+        )
+ 
+    def get_league_categories(self, con) -> pl.DataFrame:
+        # UNVERIFIED against a live league — confirm the stat_modifiers.stats
+        # shape (esp. `value` for points leagues) before relying on this.
+        # scoring_type "head" == category league (stat_categories has the
+        # ranked cats, no points); a points-format Yahoo league instead uses
+        # stat_modifiers.stats, where each Stat's `value` is the point weight.
+        settings = con.get_league_settings()
+        is_points_league = settings.stat_modifiers.stats and any(
+            stat.value not in (None, "") for stat in settings.stat_modifiers.stats
+        )
+ 
+        stats = settings.stat_modifiers.stats if is_points_league else settings.stat_categories.stats
+ 
+        dfs = []
+        for stat in stats:
+            if not is_points_league and not stat.enabled:
+                continue
+            dfs.append(
+                {
+                    "season": con.season,
+                    "platform": self.NAME,
+                    "league_id": con.league_id,
+                    "category": stat.abbr,
+                    "points": float(stat.value) if is_points_league and stat.value not in (None, "") else None,
+                }
+            )
+        return pl.DataFrame(dfs)
+
     def get_free_agents(self, con) -> pl.DataFrame:
         dfs = []
         for player in con.get_league_players():
@@ -163,7 +206,7 @@ class YahooNbaHandler(FtyHandler):
                 bs.fg3_m
             FROM nba.player_box_score AS bs
             LEFT JOIN nba.league_game_Schedule AS gs ON bs.game_id = gs.game_id
-            LEFT JOIN util.nba_fty_name_match AS id ON bs.player_id = id.nba_id
+            LEFT JOIN util.conformed_ids AS id ON bs.player_id = id.nba_id
             INNER JOIN (
                 SELECT DISTINCT
                     season,

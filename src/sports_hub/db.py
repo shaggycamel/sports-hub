@@ -41,7 +41,7 @@ class Database:
     def read(self, query: str, **kwargs) -> pl.DataFrame:
         """Run a SQL query, get a Polars DataFrame back.
         Extra kwargs (e.g. schema_overrides) pass through to pl.read_database."""
-        return pl.read_database(query, self.engine, **kwargs)
+        return pl.read_database(query, self.engine, infer_schema_length=None, **kwargs)
 
     def write(
         self,

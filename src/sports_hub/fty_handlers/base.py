@@ -24,6 +24,12 @@ class FtyHandler:
         """
         raise NotImplementedError
 
+    def get_league(self, con) -> pl.DataFrame:
+        raise NotImplementedError
+ 
+    def get_league_categories(self, con) -> pl.DataFrame:
+        raise NotImplementedError
+
     def get_free_agents(self, con) -> pl.DataFrame:
         raise NotImplementedError
 

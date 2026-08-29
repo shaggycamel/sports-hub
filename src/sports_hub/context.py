@@ -21,4 +21,4 @@ class Context:
         self.date_est = dt.datetime.now(zoneinfo.ZoneInfo("America/New_York")).date()
         self.timestamp_utc = dt.datetime.now(zoneinfo.ZoneInfo("UTC"))
         self.nba_teams = pl.DataFrame(teams.get_teams())
-        self.active_players = db_con.read('SELECT * FROM util.nba_fty_name_match WHERE is_active')
+        self.active_players = db_con.read('SELECT * FROM util.conformed_ids WHERE is_active')
