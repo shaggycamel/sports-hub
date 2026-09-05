@@ -206,7 +206,7 @@ class YahooNbaHandler(FtyHandler):
                 bs.fg3_m
             FROM nba.player_box_score AS bs
             LEFT JOIN nba.league_game_Schedule AS gs ON bs.game_id = gs.game_id
-            LEFT JOIN util.conformed_ids AS id ON bs.player_id = id.nba_id
+            LEFT JOIN util.conformed_player_id AS id ON bs.player_id = id.nba_id
             INNER JOIN (
                 SELECT DISTINCT
                     season,

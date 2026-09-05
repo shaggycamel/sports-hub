@@ -30,4 +30,4 @@ class Context:
         self.timestamp_utc = dt.datetime.now(zoneinfo.ZoneInfo("UTC"))
         self.nba_teams = pl.DataFrame(teams.get_teams())
         # NEED TO WRITE util.method THAT UPDATES ACTIVE PLAYERS
-        self.active_players = db_con.read('SELECT * FROM util.conformed_ids WHERE is_active')
+        self.active_players = db_con.read('SELECT * FROM util.conformed_player_id WHERE is_active')

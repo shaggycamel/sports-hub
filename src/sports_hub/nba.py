@@ -111,7 +111,7 @@ class NBAComponent:
         )
 
         player_ids = self.db.read(
-            "SELECT nba_name, nba_id FROM util.conformed_ids"
+            "SELECT nba_name, nba_id FROM util.conformed_player_id"
         ).with_columns(
             pl.col("nba_name").str.normalize("NFKD").str.replace_all("[^\\x00-\\x7F]", "")
         )
