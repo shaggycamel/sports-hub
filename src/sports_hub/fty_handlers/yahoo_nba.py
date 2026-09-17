@@ -37,7 +37,7 @@ class YahooNbaHandler(FtyHandler):
                 }
             ]
         )
- 
+
     def get_league_categories(self, con) -> pl.DataFrame:
         # UNVERIFIED against a live league — confirm the stat_modifiers.stats
         # shape (esp. `value` for points leagues) before relying on this.
@@ -48,9 +48,9 @@ class YahooNbaHandler(FtyHandler):
         is_points_league = settings.stat_modifiers.stats and any(
             stat.value not in (None, "") for stat in settings.stat_modifiers.stats
         )
- 
+
         stats = settings.stat_modifiers.stats if is_points_league else settings.stat_categories.stats
- 
+
         dfs = []
         for stat in stats:
             if not is_points_league and not stat.enabled:
@@ -64,7 +64,7 @@ class YahooNbaHandler(FtyHandler):
                     "points": float(stat.value) if is_points_league and stat.value not in (None, "") else None,
                 }
             )
-        return pl.DataFrame(dfs)
+        return pl.DataFrame(dfs, schema_overrides={"points": pl.Float64})
 
     def get_free_agents(self, con) -> pl.DataFrame:
         dfs = []
@@ -206,7 +206,7 @@ class YahooNbaHandler(FtyHandler):
                 bs.fg3_m
             FROM nba.player_box_score AS bs
             LEFT JOIN nba.league_game_Schedule AS gs ON bs.game_id = gs.game_id
-            LEFT JOIN util.conformed_player_id AS id ON bs.player_id = id.nba_id
+            LEFT JOIN util.conformed_ids AS id ON bs.player_id = id.nba_id
             INNER JOIN (
                 SELECT DISTINCT
                     season,

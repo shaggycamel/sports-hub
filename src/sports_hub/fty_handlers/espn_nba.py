@@ -33,8 +33,9 @@ class EspnNbaHandler(FtyHandler):
                 }
             ]
         )
- 
+
     def get_league_categories(self, con) -> pl.DataFrame:
+        
         dfs = []
         for item in con.settings._raw_scoring_settings.get("scoringItems", []):
             stat_id = str(item["statId"])
@@ -44,10 +45,10 @@ class EspnNbaHandler(FtyHandler):
                     "platform": self.NAME,
                     "league_id": con.league_id,
                     "category": STATS_MAP.get(stat_id, f"unknown({stat_id})"),
-                    "points": item.get("points") if con.settings.scoring_type == "H2H_POINTS" else None,
+                    "points": item.get("points"),
                 }
             )
-        return pl.DataFrame(dfs)
+        return pl.DataFrame(dfs, schema_overrides={"points": pl.Float64})
 
     def get_free_agents(self, con) -> pl.DataFrame:
         dfs = []
