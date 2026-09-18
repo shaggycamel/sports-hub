@@ -21,6 +21,10 @@ class EspnNbaHandler(FtyHandler):
         return con
 
     def get_league(self, con) -> pl.DataFrame:
+        # BaseSettings doesn't parse `isPublic` out of ESPN's raw response
+        # (only scoring/schedule/trade settings get extracted), so it's
+        # pulled directly from the raw league JSON instead of con.settings.
+        raw = con.espn_request.get_league()
         return pl.DataFrame(
             [
                 {
@@ -30,12 +34,21 @@ class EspnNbaHandler(FtyHandler):
                     "league_name": con.settings.name,
                     "scoring_type": con.settings.scoring_type,
                     "team_count": con.settings.team_count,
+                    "is_public": raw["settings"]["isPublic"],
                 }
             ]
         )
 
     def get_league_categories(self, con) -> pl.DataFrame:
-        
+        # `points` is only meaningful for points-format leagues (scoring_type
+        # "H2H_POINTS") — for category leagues (H2H_CATEGORY, ROTOTOTAL) this
+        # is forced to None explicitly below, rather than relying on ESPN's
+        # scoringItems happening not to carry a points value for those formats.
+        #
+        # schema_overrides forces `points` to Float64 even when every value
+        # in this league is None — otherwise an all-None column infers as
+        # Null dtype, which pl.concat can't reconcile against a Float64
+        # points column from a different (points-format) league.
         dfs = []
         for item in con.settings._raw_scoring_settings.get("scoringItems", []):
             stat_id = str(item["statId"])
@@ -45,7 +58,7 @@ class EspnNbaHandler(FtyHandler):
                     "platform": self.NAME,
                     "league_id": con.league_id,
                     "category": STATS_MAP.get(stat_id, f"unknown({stat_id})"),
-                    "points": item.get("points"),
+                    "points": item.get("points") if con.settings.scoring_type == "H2H_POINTS" else None,
                 }
             )
         return pl.DataFrame(dfs, schema_overrides={"points": pl.Float64})

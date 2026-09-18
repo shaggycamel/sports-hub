@@ -34,6 +34,10 @@ class YahooNbaHandler(FtyHandler):
                     "league_name": info.name,
                     "scoring_type": info.scoring_type,
                     "team_count": int(info.num_teams),
+                    # league_type is "private"/"public" on Yahoo's model —
+                    # converted to bool here so this column's dtype matches
+                    # ESPN's is_public (Bool) when both get pl.concat'd together.
+                    "is_public": info.league_type == "public",
                 }
             ]
         )
