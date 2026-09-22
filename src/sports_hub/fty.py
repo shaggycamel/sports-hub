@@ -184,6 +184,40 @@ class FtyComponent:
         self.db.write(df, "recent_activity", schema="fty")
         print("fty.recent_activity has been updated\n\n")
 
+    def get_competitor_roster(self):
+        if not self.leagues:
+            print(f"No leagues connected — skipping get_competitor_roster")
+            return
+
+        col_order = self.db.read(
+            "SELECT column_name "
+            "FROM util.table_column_order "
+            "WHERE table_name = 'competitor_roster' "
+            "ORDER BY column_order",
+        )["column_name"].to_list()
+
+        df_mup = self.db.read(
+            "SELECT * "
+            "FROM fty.league_matchup_dates "
+            f"WHERE '{self.ctx.date_est}' BETWEEN matchup_start AND matchup_end",
+        )
+
+        self.db.execute(
+            "DELETE FROM fty.competitor_roster "
+            f"WHERE assigned_date = '{self.ctx.date_est}' AND league_id IN ({self.league_ids})",
+        )
+
+        df = (
+            pl.concat(self._dispatch("get_competitor_roster"))
+            .with_columns(pl.lit(self.ctx.date_est).alias("assigned_date"))
+            .join(df_mup, on=["platform", "league_id"], how="left")
+            .select(col_order)
+        )
+
+        self.db.write(df, "competitor_roster", schema="fty")
+        print("fty.competitor_roster has been updated\n\n")
+
+
     def get_matchup_box_score(self):
         # Kept per-league (not batched into one _dispatch call) since leagues
         # can be on different matchup periods — matches the original
