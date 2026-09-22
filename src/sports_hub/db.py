@@ -21,8 +21,9 @@ class Database:
             self.connect(db_con)
         else:
             msg = "Database: no connection specified — call db.connect(db_con) to connect"
-            self.engine = msg
             print(msg)
+            self.engine = None
+            
 
     def connect(self, db_con: str) -> None:
         """Build and store the engine for a credentials.ini section."""
