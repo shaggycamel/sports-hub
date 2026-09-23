@@ -1,7 +1,11 @@
+import logging
+
 import polars as pl
 import polars.selectors as cs
 import janitor.polars  # noqa: F401  (registers .clean_names() on pl.DataFrame)
 from sports_hub.statyx_client import StatyxPipeline, infer_dtypes
+
+logger = logging.getLogger(__name__)
 
 
 class StatyxComponent:
@@ -18,11 +22,11 @@ class StatyxComponent:
             "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.schedule' ORDER BY column_order",
         )["column_name"].to_list()
 
-        print("\n--------------------- statyx.schedule")
+        logger.info("statyx.schedule")
         df = self.pipeline.run("schedule", params={"season": self.ctx.cur_season_year})
 
         if self.pipeline.errors:
-            print("  failed:", self.pipeline.errors)
+            logger.warning("failed: %s", self.pipeline.errors)
 
         df = (
             df.clean_names()
@@ -33,7 +37,7 @@ class StatyxComponent:
         )
 
         self.db.write(df, "schedule", schema="statyx")
-        print("statyx.schedule has been updated\n\n")
+        logger.info("statyx.schedule has been updated")
 
     def get_contracts(self):
         """Player contracts via the Statyx API."""
@@ -41,11 +45,11 @@ class StatyxComponent:
             "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.contracts' ORDER BY column_order",
         )["column_name"].to_list()
 
-        print("\n--------------------- statyx.contracts")
+        logger.info("statyx.contracts")
         df = self.pipeline.run("contracts", params={"season": self.ctx.cur_season_year})
 
         if self.pipeline.errors:
-            print("  failed:", self.pipeline.errors)
+            logger.warning("failed: %s", self.pipeline.errors)
 
         df = (
             df.clean_names()
@@ -55,7 +59,7 @@ class StatyxComponent:
         )
 
         self.db.write(df, "contracts", schema="statyx")
-        print("statyx.contracts has been updated\n\n")
+        logger.info("statyx.contracts has been updated")
         return df
 
     def get_game_stats(self):
@@ -66,11 +70,11 @@ class StatyxComponent:
 
         ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
 
-        print("\n--------------------- statyx.game_stats")
+        logger.info("statyx.game_stats")
         df = self.pipeline.run("game_stats", params={"season": self.ctx.cur_season_year}, keys=ls_pl)
 
         if self.pipeline.errors:
-            print(f"  {len(self.pipeline.errors)} player(s) failed:", self.pipeline.errors)
+            logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
         df = (
             df.clean_names()
@@ -80,7 +84,7 @@ class StatyxComponent:
         )
 
         self.db.write(df, "game_stats", schema="statyx")
-        print("statyx.game_stats has been updated\n\n")
+        logger.info("statyx.game_stats has been updated")
 
     def get_advanced_stats(self):
         """Advanced per-game stats via the Statyx API."""
@@ -95,11 +99,11 @@ class StatyxComponent:
             [0,0]
         )
 
-        print("\n--------------------- statyx.advanced_stats")
+        logger.info("statyx.advanced_stats")
         df = self.pipeline.run("advanced_stats", params={"since": since_dt}, keys=ls_pl)
 
         if self.pipeline.errors:
-            print(f"  {len(self.pipeline.errors)} player(s) failed:", self.pipeline.errors)
+            logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
         df = (
             df.clean_names()
@@ -109,7 +113,7 @@ class StatyxComponent:
         )
 
         self.db.write(df, "advanced_stats", schema="statyx")
-        print("statyx.advanced_stats has been updated\n\n")
+        logger.info("statyx.advanced_stats has been updated")
 
     def get_standings(self):
         """League standings via the Statyx API."""
@@ -117,11 +121,11 @@ class StatyxComponent:
             "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.standings' ORDER BY column_order",
         )["column_name"].to_list()
 
-        print("\n--------------------- statyx.standings")
+        logger.info("statyx.standings")
         df = self.pipeline.run("standings", params={"season": self.ctx.cur_season_year})
 
         if self.pipeline.errors:
-            print("  failed:", self.pipeline.errors)
+            logger.warning("failed: %s", self.pipeline.errors)
 
         df = (
             df.clean_names()
@@ -134,7 +138,7 @@ class StatyxComponent:
         )
 
         self.db.write(df, "standings", schema="statyx")
-        print("statyx.standings has been updated\n\n")
+        logger.info("statyx.standings has been updated")
 
     def get_play_types(self):
         """Player play types via the Statyx API."""
@@ -144,11 +148,11 @@ class StatyxComponent:
 
         ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
 
-        print("\n--------------------- statyx.play_types")
+        logger.info("statyx.play_types")
         df = self.pipeline.run("play_types", params={"season": self.ctx.cur_season}, keys=ls_pl)
 
         if self.pipeline.errors:
-            print(f"  {len(self.pipeline.errors)} player(s) failed:", self.pipeline.errors)
+            logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
         df = (
             df.clean_names()
@@ -157,7 +161,7 @@ class StatyxComponent:
         )
 
         self.db.write(df, "play_types", schema="statyx")
-        print("statyx.play_types has been updated\n\n")
+        logger.info("statyx.play_types has been updated")
 
     def get_shot_zones(self):
         """Player shot-zones via the Statyx API."""
@@ -167,11 +171,11 @@ class StatyxComponent:
 
         ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
 
-        print("\n--------------------- statyx.shot_zones")
+        logger.info("statyx.shot_zones")
         df = self.pipeline.run("shot_zones", params={"season": self.ctx.cur_season_year}, keys=ls_pl)
 
         if self.pipeline.errors:
-            print(f"  {len(self.pipeline.errors)} player(s) failed:", self.pipeline.errors)
+            logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
         df = (
             df.clean_names()
@@ -181,5 +185,4 @@ class StatyxComponent:
         )
 
         self.db.write(df, "shot_zones", schema="statyx")
-        print("statyx.shot_zones has been updated\n\n")
-
+        logger.info("statyx.shot_zones has been updated")

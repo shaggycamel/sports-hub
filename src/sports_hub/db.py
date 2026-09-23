@@ -1,10 +1,12 @@
 import os
+import logging
 import configparser
 import sqlalchemy
 import polars as pl
 
-TIMEOUT = 3 * 60  # connection timeout, seconds
+logger = logging.getLogger(__name__)
 
+TIMEOUT = 3 * 60  # connection timeout, seconds
 
 class Database:
     """
@@ -21,7 +23,7 @@ class Database:
             self.connect(db_con)
         else:
             msg = "Database: no connection specified — call db.connect(db_con) to connect"
-            print(msg)
+            logger.warning(msg)
             self.engine = None
             
 

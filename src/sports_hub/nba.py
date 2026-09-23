@@ -1,6 +1,7 @@
 import time
 import zoneinfo
 import datetime as dt
+import logging
 import requests
 import bs4
 import dateutil.parser
@@ -11,6 +12,8 @@ import janitor.polars  # noqa: F401  (registers .clean_names() on pl.DataFrame)
 import nbainjuries
 import nba_api.stats.endpoints as nba_ep
 import tabula
+
+logger = logging.getLogger(__name__)
 
 
 class NBAComponent:
@@ -27,7 +30,7 @@ class NBAComponent:
         )["column_name"].to_list()
         ls_pl = self.ctx.active_players["nba_id"].drop_nulls().to_list()
 
-        print("\n--------------------- nba.player_season_stats")
+        logger.info("nba.player_season_stats")
         dfs = []
         for player in ls_pl:
             player_season = nba_ep.playercareerstats.PlayerCareerStats(player_id=str(player))
@@ -35,9 +38,9 @@ class NBAComponent:
             dfs.append(player_season)
             ix = ls_pl.index(player)
             if ix % 50 == 0:
-                print("player:", ix, "/", len(ls_pl))
+                logger.debug("player: %d / %d", ix, len(ls_pl))
             time.sleep(1)
-        print("player:", ix, "/", len(ls_pl))
+        logger.debug("player: %d / %d", ix, len(ls_pl))
 
         df = (
             pl.concat(dfs)
@@ -48,7 +51,7 @@ class NBAComponent:
         )
 
         self.db.write(df, "player_season_stats", schema="nba")
-        print("nba.player_season_stats has been updated\n\n")
+        logger.info("nba.player_season_stats has been updated")
 
     def get_player_info(self):
         col_order = self.db.read(
@@ -56,7 +59,7 @@ class NBAComponent:
         )["column_name"].to_list()
         ls_pl = self.ctx.active_players["nba_id"].drop_nulls().to_list()
 
-        print("\n--------------------- nba.player_info")
+        logger.info("nba.player_info")
         dfs = []
         for player in ls_pl:
             player_info = nba_ep.commonplayerinfo.CommonPlayerInfo(player_id=str(player))
@@ -64,9 +67,9 @@ class NBAComponent:
             dfs.append(player_info)
             ix = ls_pl.index(player)
             if ix % 50 == 0:
-                print("player:", ix, "/", len(ls_pl))
+                logger.debug("player:", ix, "/", len(ls_pl))
             time.sleep(1)
-        print("player:", ix, "/", len(ls_pl))
+        logger.debug("player:", ix, "/", len(ls_pl))
 
         df = (
             pl.concat(dfs)
@@ -94,7 +97,8 @@ class NBAComponent:
         )
 
         self.db.write(df, "player_info", schema="nba")
-        print("nba.player_info has been updated\n\n")
+        logger.info("nba.player_info has been updated")
+        
 
     def get_team_injuries(self, force_date=None):
         dt_est = self.ctx.date_est if force_date is None else force_date
@@ -164,7 +168,7 @@ class NBAComponent:
             )
 
         self.db.write(df, "injuries", schema="nba")
-        print("nba.injuries has been updated\n\n")
+        logger.info("nba.injuries has been updated")
 
     def get_player_box_score(self):
         bs_max_dt = (
@@ -185,12 +189,13 @@ class NBAComponent:
             "select * from util.table_column_order where table_name = 'player_box_score_advanced' order by column_order",
         )
 
-        print("\n--------------------- nba.player_box_score")
+        logger.info("nba.player_box_score")
         dfs = []
+        failed = []
         g_ids = game_ids.get_column("game_id").to_list()
         for game_id in g_ids:
             game_id = "00" + str(int(game_id))
-            print(game_id)
+            logger.debug("processing game_id %s", game_id)
 
             # Traditional stats
             try:
@@ -218,8 +223,9 @@ class NBAComponent:
                     )
                     .select(cols_trad["column_name"].to_list())
                 )
-            except Exception as e:
-                print(game_id + ": " + str(e))
+            except Exception:
+                logger.exception("game_id %s (traditional stats) failed", game_id)
+                failed.append(game_id)
                 break
 
             # Advanced stats
@@ -242,15 +248,23 @@ class NBAComponent:
                     .with_columns(pl.col("game_id").cast(pl.Int64))
                     .select(cols_adv["column_name"].to_list())
                 )
-            except Exception as e:
-                print(game_id + ": " + str(e))
+            except Exception:
+                logger.exception("game_id %s (advanced stats) failed", game_id)
+                failed.append(game_id)
                 break
 
             dfs.append(bst.join(bsa, on=["game_id", "player_id"], how="left"))
 
+        if failed:
+            logger.warning("player_box_score: %d game(s) failed: %s", len(failed), failed)
+
+        if not dfs:
+            logger.error("player_box_score: nothing fetched, skipping write")
+            return
+
         df = pl.concat(dfs)
         self.db.write(df, "player_box_score", schema="nba")
-        print("nba.player_box_score have been updated\n\n")
+        logger.info("nba.player_box_score have been updated")
 
     def get_team_box_score(self):
         bs_max_dt = (
@@ -271,12 +285,13 @@ class NBAComponent:
             "select * from util.table_column_order where table_name = 'team_box_score_advanced' order by column_order",
         )
 
-        print("\n--------------------- nba.team_box_score")
+        logger.info("nba.team_box_score")
         dfs = []
+        failed = []
         g_ids = game_ids.get_column("game_id").to_list()
         for game_id in g_ids:
             game_id = "00" + str(int(game_id))
-            print(game_id)
+            logger.debug("processing game_id %s", game_id)
 
             # Traditional stats
             try:
@@ -321,8 +336,9 @@ class NBAComponent:
                     .select(cols_trad["column_name"].to_list())
                 )
 
-            except Exception as e:
-                print(game_id + ": " + str(e))
+            except Exception:
+                logger.exception("game_id %s (traditional stats) failed", game_id)
+                failed.append(game_id)
                 break
 
             # Advanced stats
@@ -345,15 +361,23 @@ class NBAComponent:
                     .with_columns(pl.col("game_id").cast(pl.Int64))
                     .select(cols_adv["column_name"].to_list())
                 )
-            except Exception as e:
-                print(game_id + ": " + str(e))
+            except Exception:
+                logger.exception("game_id %s (advanced stats) failed", game_id)
+                failed.append(game_id)
                 break
 
             dfs.append(bst.join(bsa, on=["game_id", "team_id"], how="left"))
 
+        if failed:
+            logger.warning("player_box_score: %d game(s) failed: %s", len(failed), failed)
+
+        if not dfs:
+            logger.error("player_box_score: nothing fetched, skipping write")
+            return
+
         df = pl.concat(dfs)
         self.db.write(df, "team_box_score", schema="nba")
-        print("nba.team_box_score have been updated\n\n")
+        logger.info("nba.team_box_score have been updated")
 
     def update_past_game_schedule(self, season="current"):
         col_order = self.db.read(
@@ -365,7 +389,7 @@ class NBAComponent:
         else:
             season = self.ctx.prev_season_year
 
-        print("\n--------------------- nba.historical_league_game_schedule")
+        logger.info("nba.historical_league_game_schedule")
         dfs = []
         for type_season in ["Regular Season", "Pre Season", "Playoffs", "All Star"]:
             hist_game_schedule = nba_ep.leaguegamelog.LeagueGameLog(
@@ -429,7 +453,7 @@ class NBAComponent:
         )
 
         self.db.write(df, "league_game_schedule", schema="nba")
-        print("nba.historical_game_schedule has been updated\n\n")
+        logger.info("nba.historical_game_schedule has been updated")
 
     def get_next_game_schedule(self):
         request = requests.get("https://cdn.nba.com/static/json/staticData/scheduleLeagueV2_1.json")
@@ -516,7 +540,7 @@ class NBAComponent:
         )
 
         self.db.write(df, "league_game_schedule", schema="nba")
-        print("nba.current_game_schedule has been updated\n\n")
+        logger.info("nba.current_game_schedule has been updated")
 
     def get_team_roster(self, pre_season=False):
         col_order = self.db.read(
@@ -524,7 +548,7 @@ class NBAComponent:
         )["column_name"].to_list()
         teams = self.ctx.nba_teams["id"].to_list()
 
-        print("\n--------------------- nba.team_roster")
+        logger.info("nba.team_roster")
         dfs = []
         for team in teams:
             common_teamroster = nba_ep.commonteamroster.CommonTeamRoster(
@@ -533,9 +557,9 @@ class NBAComponent:
             dfs.append(pl.from_pandas(common_teamroster.get_data_frames()[0]))
             ix = teams.index(team)
             if ix % 5 == 0:
-                print("team:", ix, "/", len(teams))
+                logger.debug("team:", ix, "/", len(teams))
             time.sleep(1)
-        print("team:", ix, "/", len(teams))
+        logger.debug("team:", ix, "/", len(teams))
 
         df = (
             pl.concat(dfs)
@@ -556,7 +580,7 @@ class NBAComponent:
 
         if pre_season:
             self.db.write(df, "team_roster", schema="nba")
-            print("nba.team_roster has been updated\n\n")
+            logger.info("nba.team_roster has been updated")
         else:
             df_existing = self.db.read(
                 f"SELECT * FROM nba.team_roster WHERE season = '{self.ctx.cur_season}' AND exit_date IS NULL",
@@ -598,6 +622,6 @@ class NBAComponent:
                 )
 
                 self.db.write(df_traded, "team_roster", schema="nba")
-                print("nba.team_roster traded players have been updated\n\n")
+                logger.info("nba.team_roster traded players have been updated")
             else:
-                print("nba.team_roster: nothing to update\n\n")
+                logger.info("nba.team_roster: nothing to update")

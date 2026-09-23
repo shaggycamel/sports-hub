@@ -1,8 +1,11 @@
 import difflib
+import logging
 import polars as pl
 from sqlalchemy import text
 from pathlib import Path
 from yfpy.query import YahooFantasySportsQuery  as yfpy
+
+logger = logging.getLogger(__name__)
 
 
 def deduplicate_tables(db_con):
@@ -16,13 +19,12 @@ def deduplicate_tables(db_con):
             AND table_name NOT LIKE '%%_vw'
             AND table_name NOT ILIKE '%%_retired'
         """,
-            db_con.db_con,
+        db_con.db_con,
     )
 
     ls_tables = list(df_tables.get_column('table_schema') + '.' + df_tables.get_column('table_name'))
-        
+
     # ----------------------- Dedup block
-    db_ex = db_con.db_con.connect()
     for table in ls_tables:
         df = pl.read_database(
             f"SELECT * FROM {table} WHERE season = '{db_con.cur_season}'",
@@ -30,11 +32,15 @@ def deduplicate_tables(db_con):
             infer_schema_length=None,
         )
 
-        if df.unique().height != df.height:
-            db_ex.execute(text(f"DELETE FROM {table} WHERE season = '{db_con.cur_season}'"))
-            db_ex.commit()
-            df.unique().write_database(table, db_con.db_con, if_table_exists='append')
-            print("------------", table, " has been deduplicated")
+        if df.unique().height == df.height:
+            continue
+
+        df_dedup = df.unique()
+        with db_con.db_con.begin() as conn:  # single transaction — commits on success, rolls back on exception
+            conn.execute(text(f"DELETE FROM {table} WHERE season = '{db_con.cur_season}'"))
+            df_dedup.write_database(table, conn, if_table_exists='append')
+
+        logger.info("%s has been deduplicated", table)
 
 
 def name_match(
