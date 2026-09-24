@@ -254,3 +254,6 @@ class YahooNbaHandler(FtyHandler):
                 fg_pct=pl.col("fgm") / pl.col("fga"), ft_pct=pl.col("ftm") / pl.col("fta")
             )
         )
+
+    def get_league_byes(self, con) -> pl.DataFrame:
+        raise NotImplementedError("Yahoo league_byes is not implemented yet")

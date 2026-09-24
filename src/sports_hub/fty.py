@@ -242,4 +242,21 @@ class FtyComponent:
             )
             self.db.write(df, "matchup_box_score", schema="fty")
             logger.info("%s;%s fty.matchup_box_score has been updated", platform, league_id)
-            return df
+        
+    def get_league_byes(self):
+        if not self.leagues:
+            logger.warning("No leagues connected — skipping get_league_byes")
+            return
+
+        for (sport, platform, league_id), con in self.leagues.items():
+            logger.info("%s;%s fty.league_byes", platform, league_id)
+            handler = self.handlers[(sport, platform)]
+            df = handler.get_league_byes(con)
+
+            self.db.execute(
+                "DELETE FROM fty.league_byes "
+                f"WHERE season = '{con.season}' "
+                f"AND platform = '{platform}' AND league_id = {league_id}"
+            )
+            self.db.write(df, "league_byes", schema="fty")
+            logger.info("%s;%s fty.league_byes has been updated", platform, league_id)

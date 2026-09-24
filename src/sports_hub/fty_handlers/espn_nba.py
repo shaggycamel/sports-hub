@@ -212,3 +212,32 @@ class EspnNbaHandler(FtyHandler):
         return pl.DataFrame(dfs).rename(
             dict(zip(cat_labels["category"], cat_labels["nba_category"]))
         )
+
+    def get_league_byes(self, con) -> pl.DataFrame:
+        real_rows = []
+        for competitor in con.teams:
+            for ix, opponent in enumerate(competitor.schedule):
+                real_rows.append(
+                    {"matchup_period": ix + 1, "competitor_id": competitor.team_id}
+                )
+
+        df_real = pl.DataFrame(real_rows).with_columns(pl.lit(True).alias("has_matchup"))
+
+        df_periods = df_real.select("matchup_period").unique()
+        df_competitors = pl.DataFrame([{"competitor_id": c.team_id} for c in con.teams])
+        df_scaffold = df_periods.join(df_competitors, how="cross")
+
+        df_byes = (
+            df_scaffold.join(df_real, on=["matchup_period", "competitor_id"], how="left")
+            .filter(pl.col("has_matchup").is_null())
+            .with_columns(
+                [
+                    pl.lit(con.season).alias("season"),
+                    pl.lit(self.NAME).alias("platform"),
+                    pl.lit(con.league_id).alias("league_id"),
+                ]
+            )
+            .select("season", "platform", "league_id", "matchup_period", "competitor_id")
+            .sort("matchup_period", "competitor_id")
+        )
+        return df_byes

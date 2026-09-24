@@ -47,3 +47,6 @@ class FtyHandler:
 
     def get_matchup_box_score(self, con) -> pl.DataFrame:
         raise NotImplementedError
+
+    def get_league_byes(self, con) -> pl.DataFrame:
+        raise NotImplementedError
