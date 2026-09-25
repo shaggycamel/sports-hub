@@ -1,4 +1,4 @@
-from sports_hub.statyx_client.transforms import flatten_hit_rates
+from sports_hub.statyx_client.transforms import flatten_hit_rates, flatten_usage_shock
 
 API_ROOT = "https://api.statyx.io/v1"
 
@@ -36,7 +36,7 @@ ENDPOINTS = {
         "defense_vs_position": {"path": "/defense-vs-position",          "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "play_type_defense":   {"path": "/play-type-defense",            "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "shot_zone_defense":   {"path": "/shot-zone-defense",            "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
-        "usage_shock":         {"path": "/usage-shock",                  "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
+        "usage_shock":         {"path": "/usage-shock",                  "keyed": False, "key_column": None,        "paginated": True,  "flatten": flatten_usage_shock},
         "team_assist_defense": {"path": "/team-assist-defense",          "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
     },
     "nfl": {

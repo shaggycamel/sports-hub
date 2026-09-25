@@ -17,6 +17,23 @@ def flatten_hit_rates(row: dict) -> list[dict]:
     ]
 
 
+def flatten_usage_shock(row: dict) -> list[dict]:
+    """
+    usage_shock responses nest stats by context:
+    {player_id, ..., withStats: {...}, withoutStats: {...}}
+    Expand into one tidy row per context, casting nested values to float.
+    """
+    base = {k: v for k, v in row.items() if k not in ("withStats", "withoutStats")}
+    results = []
+    for context, stats in [("with", row.get("withStats", {})), ("without", row.get("withoutStats", {}))]:
+        if stats:
+            result = {**base, "context": context}
+            for k, v in stats.items():
+                result[k] = float(v) if v is not None else None
+            results.append(result)
+    return results
+
+
 def infer_dtypes(df: pl.DataFrame, threshold: float = 1.0) -> pl.DataFrame:
     """
     Best-guess cast every string column to Int64 -> Float64 -> Date -> Datetime,
