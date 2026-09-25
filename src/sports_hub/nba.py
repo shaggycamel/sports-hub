@@ -51,7 +51,7 @@ class NBAComponent:
         )
 
         self.db.write(df, "player_season_stats", schema="nba")
-        logger.info("nba.player_season_stats has been updated")
+        logger.info("nba.player_season_stats has been updated (%d rows)", len(df))
 
     def get_player_info(self):
         col_order = self.db.read(
@@ -97,7 +97,7 @@ class NBAComponent:
         )
 
         self.db.write(df, "player_info", schema="nba")
-        logger.info("nba.player_info has been updated")
+        logger.info("nba.player_info has been updated (%d rows)", len(df))
         
 
     def get_team_injuries(self, force_date=None):
@@ -168,7 +168,7 @@ class NBAComponent:
             )
 
         self.db.write(df, "injuries", schema="nba")
-        logger.info("nba.injuries has been updated")
+        logger.info("nba.injuries has been updated (%d rows)", len(df))
 
     def get_player_box_score(self):
         bs_max_dt = (
@@ -264,7 +264,7 @@ class NBAComponent:
 
         df = pl.concat(dfs)
         self.db.write(df, "player_box_score", schema="nba")
-        logger.info("nba.player_box_score have been updated")
+        logger.info("nba.player_box_score have been updated (%d rows)", len(df))
 
     def get_team_box_score(self):
         bs_max_dt = (
@@ -377,7 +377,7 @@ class NBAComponent:
 
         df = pl.concat(dfs)
         self.db.write(df, "team_box_score", schema="nba")
-        logger.info("nba.team_box_score have been updated")
+        logger.info("nba.team_box_score have been updated (%d rows)", len(df))
 
     def update_past_game_schedule(self, season="current"):
         col_order = self.db.read(
@@ -453,7 +453,7 @@ class NBAComponent:
         )
 
         self.db.write(df, "league_game_schedule", schema="nba")
-        logger.info("nba.historical_game_schedule has been updated")
+        logger.info("nba.historical_game_schedule has been updated (%d rows)", len(df))
 
     def get_next_game_schedule(self):
         request = requests.get("https://cdn.nba.com/static/json/staticData/scheduleLeagueV2_1.json")
@@ -540,7 +540,7 @@ class NBAComponent:
         )
 
         self.db.write(df, "league_game_schedule", schema="nba")
-        logger.info("nba.current_game_schedule has been updated")
+        logger.info("nba.current_game_schedule has been updated (%d rows)", len(df))
 
     def get_team_roster(self, pre_season=False):
         col_order = self.db.read(
@@ -580,7 +580,7 @@ class NBAComponent:
 
         if pre_season:
             self.db.write(df, "team_roster", schema="nba")
-            logger.info("nba.team_roster has been updated")
+            logger.info("nba.team_roster has been updated (%d rows)", len(df))
         else:
             df_existing = self.db.read(
                 f"SELECT * FROM nba.team_roster WHERE season = '{self.ctx.cur_season}' AND exit_date IS NULL",
@@ -622,6 +622,6 @@ class NBAComponent:
                 )
 
                 self.db.write(df_traded, "team_roster", schema="nba")
-                logger.info("nba.team_roster traded players have been updated")
+                logger.info("nba.team_roster traded players have been updated (%d rows)", len(df_traded))
             else:
                 logger.info("nba.team_roster: nothing to update")

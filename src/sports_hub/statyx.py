@@ -37,7 +37,7 @@ class StatyxComponent:
         )
 
         self.db.write(df, "schedule", schema="statyx")
-        logger.info("statyx.schedule has been updated")
+        logger.info("statyx.schedule has been updated (%d rows)", len(df))
 
     def get_contracts(self):
         """Player contracts via the Statyx API."""
@@ -59,8 +59,7 @@ class StatyxComponent:
         )
 
         self.db.write(df, "contracts", schema="statyx")
-        logger.info("statyx.contracts has been updated")
-        return df
+        logger.info("statyx.contracts has been updated (%d rows)", len(df))
 
     def get_game_stats(self):
         """Player per-game stats via the Statyx API."""
@@ -84,7 +83,7 @@ class StatyxComponent:
         )
 
         self.db.write(df, "game_stats", schema="statyx")
-        logger.info("statyx.game_stats has been updated")
+        logger.info("statyx.game_stats has been updated (%d rows)", len(df))
 
     def get_advanced_stats(self):
         """Advanced per-game stats via the Statyx API."""
@@ -113,7 +112,7 @@ class StatyxComponent:
         )
 
         self.db.write(df, "advanced_stats", schema="statyx")
-        logger.info("statyx.advanced_stats has been updated")
+        logger.info("statyx.advanced_stats has been updated (%d rows)", len(df))
 
     def get_standings(self):
         """League standings via the Statyx API."""
@@ -138,7 +137,7 @@ class StatyxComponent:
         )
 
         self.db.write(df, "standings", schema="statyx")
-        logger.info("statyx.standings has been updated")
+        logger.info("statyx.standings has been updated (%d rows)", len(df))
 
     def get_play_types(self):
         """Player play types via the Statyx API."""
@@ -161,7 +160,7 @@ class StatyxComponent:
         )
 
         self.db.write(df, "play_types", schema="statyx")
-        logger.info("statyx.play_types has been updated")
+        logger.info("statyx.play_types has been updated (%d rows)", len(df))
 
     def get_shot_zones(self):
         """Player shot-zones via the Statyx API."""
@@ -185,4 +184,4 @@ class StatyxComponent:
         )
 
         self.db.write(df, "shot_zones", schema="statyx")
-        logger.info("statyx.shot_zones has been updated")
+        logger.info("statyx.shot_zones has been updated (%d rows)", len(df))

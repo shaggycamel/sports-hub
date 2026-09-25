@@ -129,7 +129,7 @@ class FtyComponent:
         )
         df = pl.concat(self._dispatch("get_league"))
         self.db.write(df, "league", schema="fty")
-        logger.info("fty.league has been updated")
+        logger.info("fty.league has been updated (%d rows)", len(df))
 
     def get_league_categories(self):
         if not self.leagues:
@@ -142,7 +142,7 @@ class FtyComponent:
         )
         df = pl.concat(self._dispatch("get_league_categories"))
         self.db.write(df, "league_categories", schema="fty")
-        logger.info("fty.league_categories has been updated")
+        logger.info("fty.league_categories has been updated (%d rows)", len(df))
 
     def get_free_agents(self):
         if not self.leagues:
@@ -155,7 +155,7 @@ class FtyComponent:
         )
         df = pl.concat(self._dispatch("get_free_agents"))
         self.db.write(df, "free_agents", schema="fty")
-        logger.info("fty.free_agents has been updated")
+        logger.info("fty.free_agents has been updated (%d rows)", len(df))
 
     def get_league_competitor(self):
         if not self.leagues:
@@ -168,7 +168,7 @@ class FtyComponent:
         )
         df = pl.concat(self._dispatch("get_league_competitor"))
         self.db.write(df, "league_competitor", schema="fty")
-        logger.info("fty.league_competitor has been updated")
+        logger.info("fty.league_competitor has been updated (%d rows)", len(df))
 
     def get_league_matchup(self):
         if not self.leagues:
@@ -181,12 +181,12 @@ class FtyComponent:
         )
         df = pl.concat(self._dispatch("get_league_matchup"))
         self.db.write(df, "league_matchup", schema="fty")
-        logger.info("fty.league_matchup has been updated")
+        logger.info("fty.league_matchup has been updated (%d rows)", len(df))
 
     def get_recent_activity(self):
         df = pl.concat(self._dispatch("get_recent_activity"))
         self.db.write(df, "recent_activity", schema="fty")
-        logger.info("fty.recent_activity has been updated")
+        logger.info("fty.recent_activity has been updated (%d rows)", len(df))
 
     def get_competitor_roster(self):
         if not self.leagues:
@@ -219,7 +219,7 @@ class FtyComponent:
         )
 
         self.db.write(df, "competitor_roster", schema="fty")
-        logger.info("fty.competitor_roster has been updated")
+        logger.info("fty.competitor_roster has been updated (%d rows)", len(df))
 
     def get_matchup_box_score(self):
         # Kept per-league (not batched into one _dispatch call) since leagues
@@ -241,8 +241,8 @@ class FtyComponent:
                 f"AND matchup = {df['matchup'][0]}",
             )
             self.db.write(df, "matchup_box_score", schema="fty")
-            logger.info("%s;%s fty.matchup_box_score has been updated", platform, league_id)
-        
+            logger.info("%s;%s fty.matchup_box_score has been updated (%d rows)", platform, league_id, len(df))
+
     def get_league_byes(self):
         if not self.leagues:
             logger.warning("No leagues connected — skipping get_league_byes")
@@ -259,4 +259,4 @@ class FtyComponent:
                 f"AND platform = '{platform}' AND league_id = {league_id}"
             )
             self.db.write(df, "league_byes", schema="fty")
-            logger.info("%s;%s fty.league_byes has been updated", platform, league_id)
+            logger.info("%s;%s fty.league_byes has been updated (%d rows)", platform, league_id, len(df))
