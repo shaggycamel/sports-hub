@@ -1,36 +1,96 @@
 import datetime as dt
+from typing import Callable
 
 import polars as pl
 import polars.selectors as cs
 
 
-def flatten_hit_rates(row: dict) -> list[dict]:
+def merge_subdicts(*fields: str) -> Callable[[dict], list[dict]]:
     """
-    hit-rates responses nest per-window stats:
-    {market, line, side, season, sample_size, windows: {L5: {...}, L10: {...}, ...}}
-    Expand into one tidy row per window rather than one wide row per player.
+    Build a flatten for responses that park a flat stats dict under a wrapper key
+    (e.g. NFL advanced-stats {..., stats: {...}}). Splices each named sub-dict
+    into the parent and drops the wrapper — one row in, one row out.
+
+    None of the wrapped keys collide with their parent row's, so a plain merge is
+    safe. Unnesting is what keeps these loadable: left as dicts, Polars reads them
+    as struct columns and locks each field's dtype from the first row, so a later
+    row whose value lands on a whole number fails to build.
     """
-    base = {k: v for k, v in row.items() if k != "windows"}
+    def flatten(row: dict) -> list[dict]:
+        out = {k: v for k, v in row.items() if k not in fields}
+        for field in fields:
+            sub = row.get(field)
+            if sub:
+                out.update(sub)
+        return [out]
+    return flatten
+
+
+def flatten_distributions(*fields: str) -> Callable[[dict], list[dict]]:
+    """
+    Build a flatten for responses carrying probability maps whose *keys are data*
+    (game-sim's score_distribution_json {"4-3": 0.06}, inning_distribution_json
+    {"1": 0.12}). Merging those up would add a column per scoreline, so expand to
+    long form instead: one row per bucket, tagged by which distribution it came
+    from. Tagging also avoids a cross product when a row carries several maps.
+    """
+    def flatten(row: dict) -> list[dict]:
+        base = {k: v for k, v in row.items() if k not in fields}
+        results = []
+        for field in fields:
+            for bucket, probability in (row.get(field) or {}).items():
+                results.append({
+                    **base,
+                    "distribution": field.removesuffix("_json").removesuffix("_distribution"),
+                    "bucket": bucket,
+                    "probability": probability,
+                })
+        return results
+    return flatten
+
+
+def flatten_team_shot_locations(row: dict) -> list[dict]:
+    """
+    Three levels deep: stats.shot_zones.{zone}.{fgm, fga, fg_pct}, where the zone
+    name is data rather than a field. Expand to one row per zone.
+    """
+    base = {k: v for k, v in row.items() if k != "stats"}
+    zones = ((row.get("stats") or {}).get("shot_zones") or {})
     return [
-        {**base, "window": window, **stats}
-        for window, stats in row.get("windows", {}).items()
+        {**base, "shot_zone": zone, **stats}
+        for zone, stats in zones.items()
     ]
+
+
+def flatten_shotmap(row: dict) -> list[dict]:
+    """
+    shotmap responses nest an events_data array, one entry per shot attempt.
+    Expand to one row per event; a player with no shots contributes no rows.
+    """
+    base = {k: v for k, v in row.items() if k != "events_data"}
+    return [{**base, **event} for event in (row.get("events_data") or [])]
 
 
 def flatten_usage_shock(row: dict) -> list[dict]:
     """
-    usage_shock responses nest stats by context:
-    {player_id, ..., withStats: {...}, withoutStats: {...}}
-    Expand into one tidy row per context, casting nested values to float.
+    usage-shock responses nest a teammates array, each teammate carrying
+    {deltas: {...}, withStats: {...}, withoutStats: {...}}.
+    Expand into one tidy row per teammate per context. The unnesting is what
+    keeps this loadable: left as dicts, Polars reads them as struct columns and
+    locks each field's dtype from the first row, so a later teammate whose
+    average lands on a whole number fails to build.
     """
-    base = {k: v for k, v in row.items() if k not in ("withStats", "withoutStats")}
+    base = {k: v for k, v in row.items() if k != "teammates"}
     results = []
-    for context, stats in [("with", row.get("withStats", {})), ("without", row.get("withoutStats", {}))]:
-        if stats:
-            result = {**base, "context": context}
-            for k, v in stats.items():
-                result[k] = float(v) if v is not None else None
-            results.append(result)
+    for teammate in row.get("teammates", []):
+        teammate_base = {
+            **base,
+            **{k: v for k, v in teammate.items() if k not in ("deltas", "withStats", "withoutStats")},
+            **teammate.get("deltas", {}),
+        }
+        for context, stats in (("with", teammate.get("withStats")), ("without", teammate.get("withoutStats"))):
+            if stats:
+                results.append({**teammate_base, "context": context, **stats})
     return results
 
 

@@ -80,8 +80,10 @@ class StatyxPipeline:
 
         endpoint: name from this pipeline's endpoints (self.endpoints), e.g. "game_stats" —
                   the available set depends on `sport`, passed at construction time.
-        params:   query params, e.g. {"season": 2024}. Some endpoints (e.g. "hit_rates")
-                  have required params — see endpoints.py / the API docs for each.
+        params:   query params, e.g. {"season": 2024}. Some endpoints have required
+                  params ("assets" needs sport, nfl "weekly_usage" needs season and
+                  week) and some reject "season" entirely ("usage_shock",
+                  "advanced_stats") — see the API docs for each.
         keys:     required if the endpoint is keyed (e.g. player_ids); omit otherwise
 
         On return, self.errors holds any per-key failures ({key: error_message}).

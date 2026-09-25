@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class StatyxComponent:
-    """Statyx API data (odds, hit-rates, advanced stats) — writes into the statyx.* schema."""
+    """Statyx API data (advanced stats, shot zones, on/off splits) — writes into the statyx.* schema."""
 
     def __init__(self, db, ctx, sport: str = "nba"):
         self.db = db
@@ -186,30 +186,6 @@ class StatyxComponent:
         self.db.write(df, "shot_zones", schema="statyx")
         logger.info("statyx.shot_zones has been updated (%d rows)", len(df))
 
-    def get_hit_rates(self):
-        """Player hit rates via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.hit_rates' ORDER BY column_order",
-        )["column_name"].to_list()
-
-        ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
-
-        logger.info("statyx.hit_rates")
-        df = self.pipeline.run("hit_rates", params={"season": self.ctx.cur_season_year}, keys=ls_pl)
-
-        if self.pipeline.errors:
-            logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
-
-        df = (
-            df.clean_names()
-            .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
-            .select(col_order)
-            .pipe(infer_dtypes)
-        )
-
-        self.db.write(df, "hit_rates", schema="statyx")
-        logger.info("statyx.hit_rates has been updated (%d rows)", len(df))
-
     def get_potential_assists(self):
         """Player potential assists via the Statyx API."""
         col_order = self.db.read(
@@ -219,7 +195,7 @@ class StatyxComponent:
         ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
 
         logger.info("statyx.potential_assists")
-        df = self.pipeline.run("potential_assists", params={"season": self.ctx.cur_season_year}, keys=ls_pl)
+        df = self.pipeline.run("potential_assists", params={"season": self.ctx.cur_season}, keys=ls_pl)
 
         if self.pipeline.errors:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
@@ -330,30 +306,6 @@ class StatyxComponent:
         self.db.write(df, "assist_profile", schema="statyx")
         logger.info("statyx.assist_profile has been updated (%d rows)", len(df))
 
-    def get_odds(self):
-        """Player odds via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.odds' ORDER BY column_order",
-        )["column_name"].to_list()
-
-        ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
-
-        logger.info("statyx.odds")
-        df = self.pipeline.run("odds", params={"season": self.ctx.cur_season_year}, keys=ls_pl)
-
-        if self.pipeline.errors:
-            logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
-
-        df = (
-            df.clean_names()
-            .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
-            .select(col_order)
-            .pipe(infer_dtypes)
-        )
-
-        self.db.write(df, "odds", schema="statyx")
-        logger.info("statyx.odds has been updated (%d rows)", len(df))
-
     def get_matchup_history(self):
         """Player matchup history via the Statyx API."""
         col_order = self.db.read(
@@ -363,7 +315,7 @@ class StatyxComponent:
         ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
 
         logger.info("statyx.matchup_history")
-        df = self.pipeline.run("matchup_history", params={"season": self.ctx.cur_season_year}, keys=ls_pl)
+        df = self.pipeline.run("matchup_history", params={"season": self.ctx.cur_season}, keys=ls_pl)
 
         if self.pipeline.errors:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
@@ -450,8 +402,10 @@ class StatyxComponent:
             "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.usage_shock' ORDER BY column_order",
         )["column_name"].to_list()
 
+        # /usage-shock takes no season param — it grades a rolling window the
+        # API picks itself (window_start/window_end come back in the response).
         logger.info("statyx.usage_shock")
-        df = self.pipeline.run("usage_shock", params={"season": self.ctx.cur_season_year})
+        df = self.pipeline.run("usage_shock")
 
         if self.pipeline.errors:
             logger.warning("failed: %s", self.pipeline.errors)

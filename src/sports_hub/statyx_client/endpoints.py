@@ -1,4 +1,10 @@
-from sports_hub.statyx_client.transforms import flatten_hit_rates, flatten_usage_shock
+from sports_hub.statyx_client.transforms import (
+    flatten_distributions,
+    flatten_shotmap,
+    flatten_team_shot_locations,
+    flatten_usage_shock,
+    merge_subdicts,
+)
 
 API_ROOT = "https://api.statyx.io/v1"
 
@@ -8,11 +14,9 @@ BASE_URLS = {
     "mlb":     f"{API_ROOT}/mlb",
     "wnba":    f"{API_ROOT}/wnba",
     "football": f"{API_ROOT}/football",
-    # Cross-sport resource groups — not tied to one sport's stats, but follow
+    # Cross-sport resource group — not tied to one sport's stats, but follows
     # the same {base_url}{path} / StatyxPipeline(sport=...) pattern as everything
-    # else, so they're modeled as pseudo-sports rather than bolted on separately.
-    "odds":    f"{API_ROOT}/odds",
-    "history": f"{API_ROOT}/history",
+    # else, so it's modeled as a pseudo-sport rather than bolted on separately.
     "assets":  API_ROOT,
 }
 
@@ -20,7 +24,6 @@ ENDPOINTS = {
     "nba": {
         "game_stats":          {"path": "/players/{key}/game-stats",     "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
         "shot_zones":          {"path": "/players/{key}/shot-zones",     "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
-        "hit_rates":           {"path": "/players/{key}/hit-rates",      "keyed": True,  "key_column": "player_id", "paginated": False, "flatten": flatten_hit_rates},
         "advanced_stats":      {"path": "/players/{key}/advanced-stats", "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
         "play_types":          {"path": "/players/{key}/play-types",     "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
         "potential_assists":   {"path": "/players/{key}/potential-assists",   "keyed": True,  "key_column": "player_id", "paginated": True, "flatten": None},
@@ -28,7 +31,6 @@ ENDPOINTS = {
         "drives":              {"path": "/players/{key}/drives",              "keyed": True,  "key_column": "player_id", "paginated": True, "flatten": None},
         "scoring_breakdown":   {"path": "/players/{key}/scoring-breakdown",   "keyed": True,  "key_column": "player_id", "paginated": True, "flatten": None},
         "assist_profile":      {"path": "/players/{key}/assist-profile",      "keyed": True,  "key_column": "player_id", "paginated": True, "flatten": None},
-        "odds":                {"path": "/players/{key}/odds",                "keyed": True,  "key_column": "player_id", "paginated": True, "flatten": None},
         "matchup_history":     {"path": "/players/{key}/matchup-history",     "keyed": True,  "key_column": "player_id", "paginated": True, "flatten": None},
         "schedule":            {"path": "/schedule",                     "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "standings":           {"path": "/standings",                    "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
@@ -42,8 +44,7 @@ ENDPOINTS = {
     "nfl": {
         "game_stats":          {"path": "/players/{key}/stats",              "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
         "season_stats":        {"path": "/players/{key}/season-stats",       "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
-        "advanced_stats":      {"path": "/players/{key}/advanced-stats",     "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
-        "hit_rates":           {"path": "/players/{key}/hit-rates",          "keyed": True,  "key_column": "player_id", "paginated": False, "flatten": flatten_hit_rates},
+        "advanced_stats":      {"path": "/players/{key}/advanced-stats",     "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": merge_subdicts("stats")},
         "coverage":            {"path": "/players/{key}/coverage",           "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
         "player_weekly_usage": {"path": "/players/{key}/weekly-usage",       "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
         "schedule":            {"path": "/schedule",                        "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
@@ -54,14 +55,12 @@ ENDPOINTS = {
         "depth_charts":        {"path": "/depth-charts",                    "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "injuries":            {"path": "/injuries",                        "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "weekly_usage":        {"path": "/weekly-usage",                    "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
-        "fantasy_projections_weekly": {"path": "/fantasy-projections/weekly", "keyed": False, "key_column": None, "paginated": True, "flatten": None},
-        "fantasy_projections_season": {"path": "/fantasy-projections/season", "keyed": False, "key_column": None, "paginated": True, "flatten": None},
-        "prop_projections":    {"path": "/prop-projections",                "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
+        "fantasy_projections_weekly": {"path": "/fantasy-projections/weekly", "keyed": False, "key_column": None, "paginated": True, "flatten": merge_subdicts("projected_stats", "fantasy_points")},
+        "fantasy_projections_season": {"path": "/fantasy-projections/season", "keyed": False, "key_column": None, "paginated": True, "flatten": merge_subdicts("fantasy_points")},
     },
     "mlb": {
         "game_stats":          {"path": "/players/{key}/game-stats",     "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
         "season_stats":        {"path": "/players/{key}/season-stats",   "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
-        "hit_rates":           {"path": "/players/{key}/hit-rates",      "keyed": True,  "key_column": "player_id", "paginated": False, "flatten": flatten_hit_rates},
         "schedule":            {"path": "/schedule",                     "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "standings":           {"path": "/standings",                    "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "team_stats":          {"path": "/team-stats",                   "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
@@ -70,7 +69,6 @@ ENDPOINTS = {
         "injuries":            {"path": "/injuries",                     "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "ballparks":           {"path": "/ballparks",                    "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "park_factors":        {"path": "/park-factors",                 "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
-        "game_props":          {"path": "/games/{key}/props",            "keyed": True,  "key_column": "game_id",   "paginated": True,  "flatten": None},
         "pitches":             {"path": "/games/{key}/pitches",          "keyed": True,  "key_column": "game_id",   "paginated": True,  "flatten": None},
         "plate_appearances":   {"path": "/games/{key}/plate-appearances","keyed": True,  "key_column": "game_id",   "paginated": True,  "flatten": None},
         "plays":               {"path": "/games/{key}/plays",            "keyed": True,  "key_column": "game_id",   "paginated": True,  "flatten": None},
@@ -80,10 +78,7 @@ ENDPOINTS = {
         "reliever_vulnerability": {"path": "/reliever-vulnerability",    "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "bullpen_pitch_types": {"path": "/bullpen-pitch-types",          "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "weather":             {"path": "/weather",                      "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
-        "projections":         {"path": "/projections",                  "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
-        "quant_picks":         {"path": "/quant-picks",                  "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
-        "quant_performance":   {"path": "/quant-performance",            "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
-        "game_sim":            {"path": "/game-sim",                     "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
+        "game_sim":            {"path": "/game-sim",                     "keyed": False, "key_column": None,        "paginated": True,  "flatten": flatten_distributions("score_distribution_json", "inning_distribution_json")},
         "sim_batters":         {"path": "/sim-batters",                  "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "sim_pitchers":        {"path": "/sim-pitchers",                 "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "hr_model":            {"path": "/hr-model",                     "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
@@ -91,11 +86,8 @@ ENDPOINTS = {
     "wnba": {
         "game_stats":          {"path": "/players/{key}/game-stats",     "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
         "season_stats":        {"path": "/players/{key}/season-stats",   "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
-        "advanced_stats":      {"path": "/players/{key}/advanced-stats", "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
-        "shot_locations":      {"path": "/players/{key}/shot-locations", "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
-        "odds":                {"path": "/players/{key}/odds",           "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
-        "hit_rates":           {"path": "/players/{key}/hit-rates",      "keyed": True,  "key_column": "player_id", "paginated": False, "flatten": flatten_hit_rates},
-        "game_odds":           {"path": "/games/{key}/odds",             "keyed": True,  "key_column": "game_id",   "paginated": True,  "flatten": None},
+        "advanced_stats":      {"path": "/players/{key}/advanced-stats", "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": merge_subdicts("stats")},
+        "shot_locations":      {"path": "/players/{key}/shot-locations", "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": merge_subdicts("stats")},
         # /games/{gameId}/plays takes no limit/offset — a single game's full
         # play-by-play comes back in one shot, unlike every other list endpoint.
         "plays":               {"path": "/games/{key}/plays",            "keyed": True,  "key_column": "game_id",   "paginated": False, "flatten": None},
@@ -103,35 +95,18 @@ ENDPOINTS = {
         "standings":           {"path": "/standings",                    "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "defense_vs_position": {"path": "/defense-vs-position",          "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "injuries":            {"path": "/injuries",                     "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
-        "team_shot_locations": {"path": "/team-shot-locations",          "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
-        "team_advanced_stats": {"path": "/team-advanced-stats",          "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
-        "team_totals":         {"path": "/team-totals",                  "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
+        "team_shot_locations": {"path": "/team-shot-locations",          "keyed": False, "key_column": None,        "paginated": True,  "flatten": flatten_team_shot_locations},
+        "team_advanced_stats": {"path": "/team-advanced-stats",          "keyed": False, "key_column": None,        "paginated": True,  "flatten": merge_subdicts("stats")},
+        "team_totals":         {"path": "/team-totals",                  "keyed": False, "key_column": None,        "paginated": True,  "flatten": merge_subdicts("stats")},
     },
     "football": {
         "game_stats":     {"path": "/players/{key}/game-stats",      "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
         "season_stats":   {"path": "/players/{key}/season-stats",    "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
-        "shotmap":        {"path": "/players/{key}/shotmap",         "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": None},
-        "hit_rates":      {"path": "/players/{key}/hit-rates",       "keyed": True,  "key_column": "player_id", "paginated": False, "flatten": flatten_hit_rates},
+        "shotmap":        {"path": "/players/{key}/shotmap",         "keyed": True,  "key_column": "player_id", "paginated": True,  "flatten": flatten_shotmap},
         "team_form":      {"path": "/teams/{key}/form",              "keyed": True,  "key_column": "team_id",   "paginated": True,  "flatten": None},
-        # /games/{gameId}/props takes no limit/offset — same one-shot shape as
-        # WNBA's /games/{gameId}/plays above.
-        "game_props":     {"path": "/games/{key}/props",             "keyed": True,  "key_column": "game_id",   "paginated": False, "flatten": None},
         "fixtures":       {"path": "/fixtures",                      "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "competitions":   {"path": "/competitions",                  "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "teams":          {"path": "/teams",                         "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
-    },
-    # /v1/odds/... — cross-sport normalized odds board, not scoped to one
-    # sport's stats. "board" is keyed by sport slug (nba/mlb/soccer/nfl/cfb),
-    # substituted into the {key} path segment same as a player_id elsewhere.
-    "odds": {
-        "sports": {"path": "/sports",      "keyed": False, "key_column": None,  "paginated": False, "flatten": None},
-        "board":  {"path": "/{key}/board", "keyed": True,  "key_column": "sport", "paginated": True, "flatten": None},
-    },
-    # /v1/history/... — archived (2016+) games and closing lines.
-    "history": {
-        "games":         {"path": "/games",                       "keyed": False, "key_column": None,      "paginated": True, "flatten": None},
-        "closing_odds":  {"path": "/games/{key}/closing-odds",    "keyed": True,  "key_column": "game_id", "paginated": True, "flatten": None},
-        "closing_props": {"path": "/games/{key}/closing-props",   "keyed": True,  "key_column": "game_id", "paginated": True, "flatten": None},
     },
     # /v1/assets — sport-agnostic; requires a "sport" query param at call time
     # (NFL/CFB/NBA/WNBA/MLB/SOCCER), not a path key, so it's a simple unkeyed entry.
