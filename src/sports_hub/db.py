@@ -95,6 +95,17 @@ class Database:
         self.write(df, table, schema=schema)
         logger.info("%s.%s has been updated (%d rows)", schema, table, len(df))
 
+    def delete_where(self, table: str, schema: str, where: str) -> None:
+        """
+        Delete matching rows, skipping when the table doesn't exist yet.
+
+        The replace-then-write methods issue their delete before the first write
+        has created the table, so on a fresh database there is nothing to clear.
+        """
+        if self.read(f"SELECT to_regclass('{schema}.{table}') AS t")[0, 0] is None:
+            return
+        self.execute(f"DELETE FROM {schema}.{table} WHERE {where}")
+
     def execute(self, statement: str) -> None:
         """Run a non-SELECT statement (e.g. DELETE) and commit."""
         with self.engine.connect() as conn:

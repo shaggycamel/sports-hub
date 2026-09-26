@@ -32,6 +32,7 @@ ENDPOINTS = {
         "scoring_breakdown":   {"path": "/players/{key}/scoring-breakdown",   "keyed": True,  "key_column": "player_id", "paginated": True, "flatten": None},
         "assist_profile":      {"path": "/players/{key}/assist-profile",      "keyed": True,  "key_column": "player_id", "paginated": True, "flatten": None},
         "matchup_history":     {"path": "/players/{key}/matchup-history",     "keyed": True,  "key_column": "player_id", "paginated": True, "flatten": None},
+        "players":             {"path": "/players",                      "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "schedule":            {"path": "/schedule",                     "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "standings":           {"path": "/standings",                    "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
         "contracts":           {"path": "/contracts",                    "keyed": False, "key_column": None,        "paginated": True,  "flatten": None},
