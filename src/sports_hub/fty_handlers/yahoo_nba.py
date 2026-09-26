@@ -188,72 +188,10 @@ class YahooNbaHandler(FtyHandler):
         return pl.DataFrame(dfs).join(df_already_done, on=df_already_done.columns, how="anti")
 
     def get_matchup_box_score(self, con) -> pl.DataFrame:
-        qry = f"""
-            SELECT
-                ls.season,
-                ls.platform,
-                ls.league_id,
-                ls.week AS matchup,
-                id.yahoo_id,
-                gs.game_date,
-                gs.game_id,
-                bs.pts,
-                bs.blk,
-                bs.stl,
-                bs.ast,
-                bs.reb,
-                bs.tov,
-                bs.fgm,
-                bs.fga,
-                bs.ftm,
-                bs.fta,
-                bs.fg3_m
-            FROM nba.player_box_score AS bs
-            LEFT JOIN nba.league_game_Schedule AS gs ON bs.game_id = gs.game_id
-            LEFT JOIN util.conformed_ids AS id ON bs.player_id = id.nba_id
-            INNER JOIN (
-                SELECT DISTINCT
-                    season,
-                    platform,
-                    league_id,
-                    week,
-                    week_start,
-                    week_end
-                FROM fty.league_schedule
-                WHERE platform = 'Yahoo'
-                    AND season = '{con.season}'
-                    AND league_id = {con.league_id}
-                    AND '{dt.date.today()}' BETWEEN week_start AND week_end
-            ) AS ls ON gs.game_date BETWEEN ls.week_start AND ls.week_end
-        """
-        box_scores = self.db.read(qry)
-
-        dfs = []
-        for competitor in con.get_league_teams():
-            for date_r in pl.date_range(
-                box_scores["game_date"].min(), box_scores["game_date"].max(), eager=True
-            ):
-                for player in con.get_team_roster_player_info_by_date(
-                    competitor.team_id, date_r
-                ):
-                    if player.selected_position.position not in ["IL+", "BN"]:
-                        dfs.append(
-                            {
-                                "competitor_id": competitor.team_id,
-                                "game_date": date_r,
-                                "yahoo_id": player.player_id,
-                            }
-                        )
-
-        return (
-            pl.DataFrame(dfs)
-            .join(box_scores, on=["yahoo_id", "game_date"], how="inner")
-            .group_by(["season", "platform", "league_id", "competitor_id", "matchup"])
-            .agg(pl.all().exclude(["yahoo_id", "game_date", "game_id"]).sum())
-            .with_columns(
-                fg_pct=pl.col("fgm") / pl.col("fga"), ft_pct=pl.col("ftm") / pl.col("fta")
-            )
-        )
+        # Not implemented for Yahoo. The query this was built on read
+        # fty.league_schedule, which no longer exists. Returning nothing lets the
+        # caller skip this league instead of failing the whole run.
+        return pl.DataFrame()
 
     def get_league_byes(self, con) -> pl.DataFrame:
         raise NotImplementedError("Yahoo league_byes is not implemented yet")

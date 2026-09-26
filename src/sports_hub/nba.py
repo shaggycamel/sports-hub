@@ -364,18 +364,13 @@ class NBAComponent:
         self.db.write(df, "team_box_score", schema="nba")
         logger.info("nba.team_box_score have been updated (%d rows)", len(df))
 
-    def update_past_game_schedule(self, season="current"):
-
-        if season == "current":
-            season = self.ctx.cur_season_year
-        else:
-            season = self.ctx.prev_season_year
-
-        logger.info("nba.historical_league_game_schedule")
+    def _played_games(self, season: str) -> pl.DataFrame:
+        """Completed games for a season, from LeagueGameLog — one call per season type."""
+        year = int(season[:4])
         dfs = []
         for type_season in ["Regular Season", "Pre Season", "Playoffs", "All Star"]:
             hist_game_schedule = nba_ep.leaguegamelog.LeagueGameLog(
-                season_type_all_star=type_season, season=season
+                season_type_all_star=type_season, season=year
             )
             dfs.append(
                 (
@@ -386,14 +381,20 @@ class NBAComponent:
             )
             time.sleep(1)
 
+        frames = [d for d in dfs if len(d) > 0]
+        if not frames:
+            # Pre-season: nothing played yet, so the schedule is upcoming games only.
+            logger.info("nba.league_game_schedule: no games played yet for %s", season)
+            return pl.DataFrame(schema={"game_id": pl.Int64})
+
         df = (
-            pl.concat([df for df in dfs if len(df) > 0])
+            pl.concat(frames)
             .clean_names(case_type="snake")
             .with_columns(
                 [
                     pl.col("game_id").cast(pl.Int64),
                     pl.col("game_date").str.to_date(),
-                    pl.lit(f"{season}-{str(season + 1)[-2:]}").alias("season"),
+                    pl.lit(season).alias("season"),
                     pl.col("matchup").str.replace_all(r" @ | vs\.? ", "-").alias("opponent"),
                 ]
             )
@@ -429,20 +430,12 @@ class NBAComponent:
             .rename({"team_abbreviation": "team"})
         )
 
-        self.db.execute(
-            f"DELETE FROM nba.league_game_schedule WHERE season = '{self.ctx.cur_season}'",
-        )
+        return df
 
-        self.db.write_ordered(df, "league_game_schedule", schema="nba")
-
-    def get_next_game_schedule(self):
+    def _upcoming_games(self, season: str, played_ids: pl.DataFrame) -> pl.DataFrame:
+        """Not-yet-played games for a season, from the NBA's static schedule JSON."""
         request = requests.get("https://cdn.nba.com/static/json/staticData/scheduleLeagueV2_1.json")
-        key_dates = self.db.read("SELECT * FROM nba.key_dates")
-
-        # Remove games already played this season - This assumes update_past_game_schedule is run first
-        df_played_games = self.db.read(
-            f"SELECT * FROM nba.league_game_schedule WHERE season = '{self.ctx.cur_season}' AND team_winner IS NOT NULL",
-        )
+        key_dates = self.db.read(f"SELECT * FROM nba.key_dates WHERE season = '{season}'")
 
         dfs = []
         for game_date in request.json()["leagueSchedule"]["gameDates"]:
@@ -478,9 +471,9 @@ class NBAComponent:
             .unnest(pl.col("temp"))
             .with_columns(
                 [
-                    pl.lit(self.ctx.cur_season).alias("season"),
-                    pl.lit(None).alias("team_winner"),
-                    pl.lit(None).alias("team_loser"),
+                    pl.lit(season).alias("season"),
+                    pl.lit(None).cast(pl.String).alias("team_winner"),
+                    pl.lit(None).cast(pl.String).alias("team_loser"),
                     pl.col("field_0").alias("team"),
                     pl.col("field_2").alias("opponent"),
                     pl.when(pl.col("field_1") == "vs.")
@@ -504,7 +497,7 @@ class NBAComponent:
                 pl.col("game_date") <= pl.col("end_date"),
             )
             .join(
-                df_played_games.select("game_id").with_columns(pl.col("game_id").cast(pl.Int64)),
+                played_ids.select("game_id").with_columns(pl.col("game_id").cast(pl.Int64)),
                 on="game_id",
                 how="anti",
             )
@@ -514,6 +507,38 @@ class NBAComponent:
                 | (pl.col("matchup") == "undetermined")
             )
         )
+
+        return df
+
+    def get_game_schedule(self, season: str | None = None, upcoming_only: bool = False):
+        """
+        League schedule for one season — played and upcoming games in one write.
+
+        Played games come from LeagueGameLog (four calls, one per season type) and
+        carry a winner; upcoming games come from the NBA's static schedule JSON and
+        have a null one. Writing them together means the table is never left half
+        populated, and the delete is scoped to the season actually asked for.
+
+        upcoming_only skips the four played calls and replaces just the undecided
+        rows — the cheap daily refresh once a season is under way.
+        """
+        season = season or self.ctx.cur_season
+
+        logger.info("nba.league_game_schedule")
+
+        if upcoming_only:
+            played = self.db.read(
+                f"SELECT game_id FROM nba.league_game_schedule "
+                f"WHERE season = '{season}' AND team_winner IS NOT NULL"
+            )
+            df = self._upcoming_games(season, played)
+            self.db.delete_where(
+                "league_game_schedule", "nba", f"season = '{season}' AND team_winner IS NULL"
+            )
+        else:
+            played = self._played_games(season)
+            df = pl.concat([played, self._upcoming_games(season, played)], how="diagonal_relaxed")
+            self.db.delete_where("league_game_schedule", "nba", f"season = '{season}'")
 
         self.db.write_ordered(df, "league_game_schedule", schema="nba")
 

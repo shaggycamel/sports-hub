@@ -37,16 +37,39 @@ class FtyComponent:
         self.handlers = {key: cls(db) for key, cls in HANDLERS.items()}
         self.leagues = self._connect_leagues(leagues)
 
-    def connect_leagues(self, leagues: pl.DataFrame) -> None:
+    def connect_leagues(self, leagues: pl.DataFrame | None = None, season: str | None = None) -> None:
         """
         (Re)connect to a set of leagues after this component has already
         been constructed — e.g. when `leagues` isn't known until after
         `hub = SportsHub()` has run. Replaces any leagues currently
         connected; call this instead of reaching into `_connect_leagues`
         or `self.leagues` directly.
+
+        With no arguments this connects every league registered for the
+        current season. Pass `leagues` to connect an arbitrary subset (one
+        league while debugging, say), or `season` to target another year.
         """
+        if leagues is None:
+            leagues = self._registered_leagues(season or self.ctx.cur_season)
+
         self.leagues = self._connect_leagues(leagues)
         self.league_ids = ', '.join(map(str, {league_id for _, _, league_id in self.leagues}))
+
+    def _registered_leagues(self, season: str) -> pl.DataFrame:
+        """
+        Every league with credentials for a season, shaped for _connect_leagues.
+
+        Credentials hang off the customer rather than the league, so this joins
+        through customer_platform; DISTINCT because several customers can share
+        one league and it only needs connecting once.
+        """
+        return self.db.read(
+            "SELECT DISTINCT cl.platform, cl.league_id, cp.credentials "
+            "FROM fty.customer_league cl "
+            "JOIN fty.customer_platform cp "
+            "  ON cp.customer_id = cl.customer_id AND cp.platform = cl.platform "
+            f"WHERE cl.season = '{season}'"
+        )
 
     def _season_year_for(self, sport: str) -> int:
         # Season semantics are sport-specific. Only NBA is wired up today —
@@ -224,6 +247,10 @@ class FtyComponent:
             logger.info("%s;%s fty.matchup_box_score", platform, league_id)
             handler = self.handlers[(sport, platform)]
             df = handler.get_matchup_box_score(con)
+
+            if df.is_empty():
+                logger.info("%s;%s fty.matchup_box_score: nothing returned — skipped", platform, league_id)
+                continue
 
             self.db.execute(
                 "DELETE FROM fty.matchup_box_score "
