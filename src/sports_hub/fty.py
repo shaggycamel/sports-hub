@@ -193,13 +193,6 @@ class FtyComponent:
             logger.warning("No leagues connected — skipping get_competitor_roster")
             return
 
-        col_order = self.db.read(
-            "SELECT column_name "
-            "FROM util.table_column_order "
-            "WHERE table_name = 'competitor_roster' "
-            "ORDER BY column_order",
-        )["column_name"].to_list()
-
         df_mup = self.db.read(
             "SELECT * "
             "FROM fty.league_matchup_dates "
@@ -215,11 +208,9 @@ class FtyComponent:
             pl.concat(self._dispatch("get_competitor_roster"))
             .with_columns(pl.lit(self.ctx.date_est).alias("assigned_date"))
             .join(df_mup, on=["platform", "league_id"], how="left")
-            .select(col_order)
         )
 
-        self.db.write(df, "competitor_roster", schema="fty")
-        logger.info("fty.competitor_roster has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "competitor_roster", schema="fty")
 
     def get_matchup_box_score(self):
         # Kept per-league (not batched into one _dispatch call) since leagues

@@ -56,6 +56,45 @@ class Database:
         """Write a Polars DataFrame to a table."""
         df.write_database(f"{schema}.{table}", self.engine, if_table_exists=if_exists)
 
+    def conform(self, df: pl.DataFrame, table: str, schema: str) -> pl.DataFrame:
+        """
+        Shape a frame to a registration in util.table_column_order: rename source
+        columns via origin_name, then select in column_order.
+
+        Rows with a null origin_name are left alone, which covers columns derived
+        in code rather than read from the source (nba box scores build player_name
+        from two source fields). An unregistered table is returned untouched, so a
+        new table can land before its ordering has been curated.
+        """
+        reg = self.read(
+            "SELECT column_name, origin_name FROM util.table_column_order "
+            f"WHERE schema = '{schema}' AND table_name = '{table}' "
+            "ORDER BY column_order",
+        )
+
+        if reg.is_empty():
+            logger.info(
+                "%s.%s has no util.table_column_order rows — keeping all %d columns as-is",
+                schema, table, df.width,
+            )
+            return df
+
+        mapped = reg.drop_nulls()
+        renames = dict(zip(mapped["origin_name"], mapped["column_name"]))
+        return df.rename(renames).select(reg["column_name"].to_list())
+
+    def write_ordered(self, df: pl.DataFrame, table: str, schema: str, order_key: str | None = None) -> None:
+        """
+        Conform a frame to its registration, then write to <schema>.<table>.
+
+        order_key overrides which registration to read when one table is fed by
+        more than one method (nba.league_game_schedule has a /past and a /future
+        column set), and otherwise defaults to the table's own name.
+        """
+        df = self.conform(df, order_key or table, schema)
+        self.write(df, table, schema=schema)
+        logger.info("%s.%s has been updated (%d rows)", schema, table, len(df))
+
     def execute(self, statement: str) -> None:
         """Run a non-SELECT statement (e.g. DELETE) and commit."""
         with self.engine.connect() as conn:

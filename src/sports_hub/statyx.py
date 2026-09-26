@@ -18,10 +18,6 @@ class StatyxComponent:
 
     def get_schedule(self):
         """League schedule via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.schedule' ORDER BY column_order",
-        )["column_name"].to_list()
-
         logger.info("statyx.schedule")
         df = self.pipeline.run("schedule", params={"season": self.ctx.cur_season_year})
 
@@ -29,22 +25,16 @@ class StatyxComponent:
             logger.warning("failed: %s", self.pipeline.errors)
 
         df = (
-            df.clean_names()
+            df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
-            .select(col_order)
             .pipe(infer_dtypes)
             .with_columns(cs.by_dtype(pl.Datetime("us", "UTC")).dt.replace_time_zone(None) )
         )
 
-        self.db.write(df, "schedule", schema="statyx")
-        logger.info("statyx.schedule has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "schedule", schema="statyx")
 
     def get_contracts(self):
         """Player contracts via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.contracts' ORDER BY column_order",
-        )["column_name"].to_list()
-
         logger.info("statyx.contracts")
         df = self.pipeline.run("contracts", params={"season": self.ctx.cur_season_year})
 
@@ -52,21 +42,15 @@ class StatyxComponent:
             logger.warning("failed: %s", self.pipeline.errors)
 
         df = (
-            df.clean_names()
+            df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
-            .select(col_order)
             .pipe(infer_dtypes)
         )
 
-        self.db.write(df, "contracts", schema="statyx")
-        logger.info("statyx.contracts has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "contracts", schema="statyx")
 
     def get_game_stats(self):
         """Player per-game stats via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.game_stats' ORDER BY column_order",
-        )["column_name"].to_list()
-
         ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
 
         logger.info("statyx.game_stats")
@@ -76,21 +60,15 @@ class StatyxComponent:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
         df = (
-            df.clean_names()
+            df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
-            .select(col_order)
             .pipe(infer_dtypes)
         )
 
-        self.db.write(df, "game_stats", schema="statyx")
-        logger.info("statyx.game_stats has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "game_stats", schema="statyx")
 
     def get_advanced_stats(self):
         """Advanced per-game stats via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.advanced_stats' ORDER BY column_order",
-        )["column_name"].to_list()
-
         ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
         since_dt = str(
             self.db.read('SELECT MAX(game_date) FROM statyx.advanced_stats')
@@ -105,21 +83,15 @@ class StatyxComponent:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
         df = (
-            df.clean_names()
+            df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
-            .select(col_order)
             .pipe(infer_dtypes)
         )
 
-        self.db.write(df, "advanced_stats", schema="statyx")
-        logger.info("statyx.advanced_stats has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "advanced_stats", schema="statyx")
 
     def get_standings(self):
         """League standings via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.standings' ORDER BY column_order",
-        )["column_name"].to_list()
-
         logger.info("statyx.standings")
         df = self.pipeline.run("standings", params={"season": self.ctx.cur_season_year})
 
@@ -127,24 +99,18 @@ class StatyxComponent:
             logger.warning("failed: %s", self.pipeline.errors)
 
         df = (
-            df.clean_names()
+            df.clean_names(case_type="snake")
             .with_columns([
                 pl.lit(self.ctx.cur_season).alias("season"),
                 pl.lit(self.ctx.date_est).alias("date")
             ])
-            .select(col_order)
             .pipe(infer_dtypes)
         )
 
-        self.db.write(df, "standings", schema="statyx")
-        logger.info("statyx.standings has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "standings", schema="statyx")
 
     def get_play_types(self):
         """Player play types via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.play_types' ORDER BY column_order",
-        )["column_name"].to_list()
-
         ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
 
         logger.info("statyx.play_types")
@@ -154,20 +120,14 @@ class StatyxComponent:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
         df = (
-            df.clean_names()
-            .select(col_order)
+            df.clean_names(case_type="snake")
             .pipe(infer_dtypes)
         )
 
-        self.db.write(df, "play_types", schema="statyx")
-        logger.info("statyx.play_types has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "play_types", schema="statyx")
 
     def get_shot_zones(self):
         """Player shot-zones via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.shot_zones' ORDER BY column_order",
-        )["column_name"].to_list()
-
         ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
 
         logger.info("statyx.shot_zones")
@@ -177,21 +137,15 @@ class StatyxComponent:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
         df = (
-            df.clean_names()
+            df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
-            .select(col_order)
             .pipe(infer_dtypes)
         )
 
-        self.db.write(df, "shot_zones", schema="statyx")
-        logger.info("statyx.shot_zones has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "shot_zones", schema="statyx")
 
     def get_potential_assists(self):
         """Player potential assists via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.potential_assists' ORDER BY column_order",
-        )["column_name"].to_list()
-
         ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
 
         logger.info("statyx.potential_assists")
@@ -201,21 +155,15 @@ class StatyxComponent:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
         df = (
-            df.clean_names()
+            df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
-            .select(col_order)
             .pipe(infer_dtypes)
         )
 
-        self.db.write(df, "potential_assists", schema="statyx")
-        logger.info("statyx.potential_assists has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "potential_assists", schema="statyx")
 
     def get_shooting_splits(self):
         """Player shooting splits via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.shooting_splits' ORDER BY column_order",
-        )["column_name"].to_list()
-
         ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
 
         logger.info("statyx.shooting_splits")
@@ -225,21 +173,15 @@ class StatyxComponent:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
         df = (
-            df.clean_names()
+            df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
-            .select(col_order)
             .pipe(infer_dtypes)
         )
 
-        self.db.write(df, "shooting_splits", schema="statyx")
-        logger.info("statyx.shooting_splits has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "shooting_splits", schema="statyx")
 
     def get_drives(self):
         """Player drives via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.drives' ORDER BY column_order",
-        )["column_name"].to_list()
-
         ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
 
         logger.info("statyx.drives")
@@ -249,21 +191,15 @@ class StatyxComponent:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
         df = (
-            df.clean_names()
+            df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
-            .select(col_order)
             .pipe(infer_dtypes)
         )
 
-        self.db.write(df, "drives", schema="statyx")
-        logger.info("statyx.drives has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "drives", schema="statyx")
 
     def get_scoring_breakdown(self):
         """Player scoring breakdown via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.scoring_breakdown' ORDER BY column_order",
-        )["column_name"].to_list()
-
         ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
 
         logger.info("statyx.scoring_breakdown")
@@ -273,21 +209,15 @@ class StatyxComponent:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
         df = (
-            df.clean_names()
+            df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
-            .select(col_order)
             .pipe(infer_dtypes)
         )
 
-        self.db.write(df, "scoring_breakdown", schema="statyx")
-        logger.info("statyx.scoring_breakdown has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "scoring_breakdown", schema="statyx")
 
     def get_assist_profile(self):
         """Player assist profile via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.assist_profile' ORDER BY column_order",
-        )["column_name"].to_list()
-
         ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
 
         logger.info("statyx.assist_profile")
@@ -297,21 +227,15 @@ class StatyxComponent:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
         df = (
-            df.clean_names()
+            df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
-            .select(col_order)
             .pipe(infer_dtypes)
         )
 
-        self.db.write(df, "assist_profile", schema="statyx")
-        logger.info("statyx.assist_profile has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "assist_profile", schema="statyx")
 
     def get_matchup_history(self):
         """Player matchup history via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.matchup_history' ORDER BY column_order",
-        )["column_name"].to_list()
-
         ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
 
         logger.info("statyx.matchup_history")
@@ -321,21 +245,15 @@ class StatyxComponent:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
         df = (
-            df.clean_names()
+            df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
-            .select(col_order)
             .pipe(infer_dtypes)
         )
 
-        self.db.write(df, "matchup_history", schema="statyx")
-        logger.info("statyx.matchup_history has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "matchup_history", schema="statyx")
 
     def get_defense_vs_position(self):
         """Defense vs position via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.defense_vs_position' ORDER BY column_order",
-        )["column_name"].to_list()
-
         logger.info("statyx.defense_vs_position")
         df = self.pipeline.run("defense_vs_position", params={"season": self.ctx.cur_season_year})
 
@@ -343,21 +261,15 @@ class StatyxComponent:
             logger.warning("failed: %s", self.pipeline.errors)
 
         df = (
-            df.clean_names()
+            df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
-            .select(col_order)
             .pipe(infer_dtypes)
         )
 
-        self.db.write(df, "defense_vs_position", schema="statyx")
-        logger.info("statyx.defense_vs_position has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "defense_vs_position", schema="statyx")
 
     def get_play_type_defense(self):
         """Play type defense via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.play_type_defense' ORDER BY column_order",
-        )["column_name"].to_list()
-
         logger.info("statyx.play_type_defense")
         df = self.pipeline.run("play_type_defense", params={"season": self.ctx.cur_season_year})
 
@@ -365,21 +277,15 @@ class StatyxComponent:
             logger.warning("failed: %s", self.pipeline.errors)
 
         df = (
-            df.clean_names()
+            df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
-            .select(col_order)
             .pipe(infer_dtypes)
         )
 
-        self.db.write(df, "play_type_defense", schema="statyx")
-        logger.info("statyx.play_type_defense has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "play_type_defense", schema="statyx")
 
     def get_shot_zone_defense(self):
         """Shot zone defense via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.shot_zone_defense' ORDER BY column_order",
-        )["column_name"].to_list()
-
         logger.info("statyx.shot_zone_defense")
         df = self.pipeline.run("shot_zone_defense", params={"season": self.ctx.cur_season_year})
 
@@ -387,21 +293,15 @@ class StatyxComponent:
             logger.warning("failed: %s", self.pipeline.errors)
 
         df = (
-            df.clean_names()
+            df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
-            .select(col_order)
             .pipe(infer_dtypes)
         )
 
-        self.db.write(df, "shot_zone_defense", schema="statyx")
-        logger.info("statyx.shot_zone_defense has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "shot_zone_defense", schema="statyx")
 
     def get_usage_shock(self):
         """Usage shock via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.usage_shock' ORDER BY column_order",
-        )["column_name"].to_list()
-
         # /usage-shock takes no season param — it grades a rolling window the
         # API picks itself (window_start/window_end come back in the response).
         logger.info("statyx.usage_shock")
@@ -411,21 +311,15 @@ class StatyxComponent:
             logger.warning("failed: %s", self.pipeline.errors)
 
         df = (
-            df.clean_names()
+            df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
-            .select(col_order)
             .pipe(infer_dtypes)
         )
 
-        self.db.write(df, "usage_shock", schema="statyx")
-        logger.info("statyx.usage_shock has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "usage_shock", schema="statyx")
 
     def get_team_assist_defense(self):
         """Team assist defense via the Statyx API."""
-        col_order = self.db.read(
-            "SELECT column_name FROM util.table_column_order WHERE table_name = 'statyx.team_assist_defense' ORDER BY column_order",
-        )["column_name"].to_list()
-
         logger.info("statyx.team_assist_defense")
         df = self.pipeline.run("team_assist_defense", params={"season": self.ctx.cur_season_year})
 
@@ -433,11 +327,9 @@ class StatyxComponent:
             logger.warning("failed: %s", self.pipeline.errors)
 
         df = (
-            df.clean_names()
+            df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
-            .select(col_order)
             .pipe(infer_dtypes)
         )
 
-        self.db.write(df, "team_assist_defense", schema="statyx")
-        logger.info("statyx.team_assist_defense has been updated (%d rows)", len(df))
+        self.db.write_ordered(df, "team_assist_defense", schema="statyx")
