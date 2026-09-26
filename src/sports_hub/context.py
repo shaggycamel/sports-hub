@@ -15,7 +15,7 @@ class Context:
 
     def __init__(self, db_con):
 
-        temp_season = "2026-27"
+        temp_season = "2025-26"
         temp_prev_season = f"{int(temp_season[:4])-1}-{temp_season[2:4]}"
         self.cur_season = temp_season
         self.cur_season_year = int(temp_season[0:4])

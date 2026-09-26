@@ -46,7 +46,7 @@ class StatyxPipeline:
         sport: str = "nba",
         api_key: str | None = None,
         config_path: str | None = None,
-        max_concurrent: int = 10,
+        max_concurrent: int = 5,
     ):
         if sport not in self.BASE_URLS:
             raise ValueError(f"Unknown sport '{sport}'. Options: {list(self.BASE_URLS)}")

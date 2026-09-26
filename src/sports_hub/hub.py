@@ -1,3 +1,5 @@
+import logging
+
 import polars as pl
 from sports_hub.db import Database
 from sports_hub.context import Context
@@ -20,6 +22,18 @@ class SportsHub:
     """
 
     def __init__(self, ini_path: str | None = None, db_con: str | None = None, sport: str = "nba", leagues: pl.DataFrame | None = None):
+        # Components log progress and row counts at INFO. Python drops INFO when
+        # nothing has configured logging, which is why a plain script sees silence.
+        # basicConfig is a no-op if handlers already exist, so a caller's own
+        # setup wins; the second line only raises our own package's level, in case
+        # that setup left the root at WARNING (IPython/Positron consoles do).
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)-7s %(name)s  %(message)s",
+            datefmt="%H:%M:%S",
+        )
+        logging.getLogger("sports_hub").setLevel(logging.INFO)
+
         self.db = Database(ini_path, db_con)
         self.ctx = Context(self.db)
         self.sport = sport

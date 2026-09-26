@@ -24,6 +24,10 @@ class StatyxComponent:
         if self.pipeline.errors:
             logger.warning("failed: %s", self.pipeline.errors)
 
+        if df.is_empty():
+            logger.warning("statyx.schedule: API returned no rows — nothing written")
+            return
+
         df = (
             df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
@@ -40,6 +44,10 @@ class StatyxComponent:
 
         if self.pipeline.errors:
             logger.warning("failed: %s", self.pipeline.errors)
+
+        if df.is_empty():
+            logger.warning("statyx.contracts: API returned no rows — nothing written")
+            return
 
         df = (
             df.clean_names(case_type="snake")
@@ -58,6 +66,10 @@ class StatyxComponent:
 
         if self.pipeline.errors:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
+
+        if df.is_empty():
+            logger.warning("statyx.game_stats: API returned no rows — nothing written")
+            return
 
         df = (
             df.clean_names(case_type="snake")
@@ -82,6 +94,10 @@ class StatyxComponent:
         if self.pipeline.errors:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
+        if df.is_empty():
+            logger.warning("statyx.advanced_stats: API returned no rows — nothing written")
+            return
+
         df = (
             df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
@@ -97,6 +113,10 @@ class StatyxComponent:
 
         if self.pipeline.errors:
             logger.warning("failed: %s", self.pipeline.errors)
+
+        if df.is_empty():
+            logger.warning("statyx.standings: API returned no rows — nothing written")
+            return
 
         df = (
             df.clean_names(case_type="snake")
@@ -119,6 +139,10 @@ class StatyxComponent:
         if self.pipeline.errors:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
+        if df.is_empty():
+            logger.warning("statyx.play_types: API returned no rows — nothing written")
+            return
+
         df = (
             df.clean_names(case_type="snake")
             .pipe(infer_dtypes)
@@ -135,6 +159,10 @@ class StatyxComponent:
 
         if self.pipeline.errors:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
+
+        if df.is_empty():
+            logger.warning("statyx.shot_zones: API returned no rows — nothing written")
+            return
 
         df = (
             df.clean_names(case_type="snake")
@@ -154,6 +182,10 @@ class StatyxComponent:
         if self.pipeline.errors:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
+        if df.is_empty():
+            logger.warning("statyx.potential_assists: API returned no rows — nothing written")
+            return
+
         df = (
             df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
@@ -171,6 +203,10 @@ class StatyxComponent:
 
         if self.pipeline.errors:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
+
+        if df.is_empty():
+            logger.warning("statyx.shooting_splits: API returned no rows — nothing written")
+            return
 
         df = (
             df.clean_names(case_type="snake")
@@ -190,6 +226,10 @@ class StatyxComponent:
         if self.pipeline.errors:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
+        if df.is_empty():
+            logger.warning("statyx.drives: API returned no rows — nothing written")
+            return
+
         df = (
             df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
@@ -207,6 +247,10 @@ class StatyxComponent:
 
         if self.pipeline.errors:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
+
+        if df.is_empty():
+            logger.warning("statyx.scoring_breakdown: API returned no rows — nothing written")
+            return
 
         df = (
             df.clean_names(case_type="snake")
@@ -226,6 +270,10 @@ class StatyxComponent:
         if self.pipeline.errors:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
+        if df.is_empty():
+            logger.warning("statyx.assist_profile: API returned no rows — nothing written")
+            return
+
         df = (
             df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
@@ -244,6 +292,10 @@ class StatyxComponent:
         if self.pipeline.errors:
             logger.warning("%d player(s) failed: %s", len(self.pipeline.errors), self.pipeline.errors)
 
+        if df.is_empty():
+            logger.warning("statyx.matchup_history: API returned no rows — nothing written")
+            return
+
         df = (
             df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
@@ -259,6 +311,10 @@ class StatyxComponent:
 
         if self.pipeline.errors:
             logger.warning("failed: %s", self.pipeline.errors)
+
+        if df.is_empty():
+            logger.warning("statyx.defense_vs_position: API returned no rows — nothing written")
+            return
 
         df = (
             df.clean_names(case_type="snake")
@@ -276,6 +332,10 @@ class StatyxComponent:
         if self.pipeline.errors:
             logger.warning("failed: %s", self.pipeline.errors)
 
+        if df.is_empty():
+            logger.warning("statyx.play_type_defense: API returned no rows — nothing written")
+            return
+
         df = (
             df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
@@ -291,6 +351,10 @@ class StatyxComponent:
 
         if self.pipeline.errors:
             logger.warning("failed: %s", self.pipeline.errors)
+
+        if df.is_empty():
+            logger.warning("statyx.shot_zone_defense: API returned no rows — nothing written")
+            return
 
         df = (
             df.clean_names(case_type="snake")
@@ -310,6 +374,10 @@ class StatyxComponent:
         if self.pipeline.errors:
             logger.warning("failed: %s", self.pipeline.errors)
 
+        if df.is_empty():
+            logger.warning("statyx.usage_shock: API returned no rows — nothing written")
+            return
+
         df = (
             df.clean_names(case_type="snake")
             .with_columns(pl.lit(self.ctx.cur_season).alias("season"))
@@ -325,6 +393,10 @@ class StatyxComponent:
 
         if self.pipeline.errors:
             logger.warning("failed: %s", self.pipeline.errors)
+
+        if df.is_empty():
+            logger.warning("statyx.team_assist_defense: API returned no rows — nothing written")
+            return
 
         df = (
             df.clean_names(case_type="snake")

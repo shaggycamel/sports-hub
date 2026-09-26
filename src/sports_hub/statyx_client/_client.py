@@ -5,9 +5,10 @@ import aiohttp
 class StatyxClient:
     """Thin transport layer: pagination + concurrency. No knowledge of specific endpoints."""
 
-    def __init__(self, api_key: str, max_concurrent: int = 10):
+    def __init__(self, api_key: str, max_concurrent: int = 5, max_retries: int = 4):
         self.api_key = api_key
         self.max_concurrent = max_concurrent
+        self.max_retries = max_retries
         self.session: aiohttp.ClientSession | None = None
 
     async def __aenter__(self):
@@ -21,15 +22,28 @@ class StatyxClient:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.session.close()
 
+    async def _get(self, url: str, params: dict):
+        """
+        One GET, retrying on 429. Keyed endpoints fan out a request per player,
+        which overruns the account's rate limit (800 per window) long before the
+        concurrency cap binds — capping simultaneous connections throttles the
+        rate only indirectly, so the retry is what actually makes a 429 survivable.
+        Honours Retry-After when the server sends one, else backs off 1s, 2s, 4s...
+        """
+        for attempt in range(self.max_retries + 1):
+            async with self.session.get(url, params=params) as r:
+                if r.status == 429 and attempt < self.max_retries:
+                    await asyncio.sleep(float(r.headers.get("Retry-After", 2 ** attempt)))
+                    continue
+                r.raise_for_status()
+                return (await r.json())["data"]
+
     async def get_paginated(self, url: str, params: dict) -> list:
         """Fetch every page of one list endpoint call."""
         rows = []
         offset = 0
         while True:
-            page_params = {**params, "limit": 200, "offset": offset}
-            async with self.session.get(url, params=page_params) as r:
-                r.raise_for_status()
-                data = (await r.json())["data"]
+            data = await self._get(url, {**params, "limit": 200, "offset": offset})
             rows.extend(data)
             if len(data) < 200:  # last page
                 break
@@ -38,9 +52,7 @@ class StatyxClient:
 
     async def get_one(self, url: str, params: dict) -> dict:
         """Fetch a single-object endpoint (no list, no pagination)."""
-        async with self.session.get(url, params=params) as r:
-            r.raise_for_status()
-            return (await r.json())["data"]
+        return await self._get(url, params)
 
     async def get_many(self, calls: list[tuple], paginated: bool = True) -> list:
         """
