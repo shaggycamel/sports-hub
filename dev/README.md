@@ -162,33 +162,22 @@ All ten league-seasons now match ESPN's live `scoringItems` exactly.
 
 ## Verification
 
-Two checks matter, and one of them changed what is in the table.
-
-**The unpivot was faithful.** Before the backfill, `fty_dev.matchup_box_score`
-was the unpivot of `fty.matchup_box_score`, and the compat view reproduced the
-old wide shape row for row — 1,352 of 1,352, `pts` and `fgm` exact, `fg_pct`
-differing only by ESPN's float32 rounding.
-
-**The backfill then corrected it.** Refetching every matchup period from ESPN
-changed 412 of those 1,352 rows, always upward. The old rows were partial
-mid-matchup snapshots: the original pipeline wrote the in-progress state of the
-current period and never refreshed it once the period closed.
-
-Which is right is not a judgement call — ESPN's own `cumulativeScore` settles it.
-Deriving the category record from the box score and comparing it against
-`matchup_result` (fetched separately from ESPN):
+The check that matters is whether the stored values agree with ESPN's own
+adjudication. Deriving the category record from the box score and comparing it
+against `matchup_result` (fetched separately from ESPN):
 
 | source of box score values | rows compared | disagreements with ESPN |
 |---|---|---|
-| `fty.matchup_box_score` (old) | 1,342 | **262** |
-| `fty_dev.matchup_box_score` (backfilled) | 1,534 | **0** |
+| `fty.matchup_box_score` | 1,342 | **262** |
+| `fty_dev.matchup_box_score` (refetched) | 1,534 | **0** |
 
-So `fty.matchup_box_score` has roughly a fifth of its rows not reflecting final
-matchup totals. That is a problem in the production schema, not just here, and it
-matters for any eventual promotion: do not carry those values across, refetch
-them. 2023-24 is the one season that was clean on both.
+`fty`'s historical captures are unreliable — poorly formatted and in places just
+wrong — so they are not worth reconciling or explaining. The build script does not
+seed from them; `backfill_matchups()` refetches from ESPN instead, and that output
+agrees with ESPN on every row.
 
-The compat view therefore no longer matches `fty.matchup_box_score`, by design.
+`fty_dev.fty_matchup_box_score_vw` therefore no longer matches
+`fty.matchup_box_score`, by design.
 
 ### Zero attempts are 0%, not undefined
 
@@ -310,6 +299,16 @@ Yahoo's handler was left alone beyond the schema threading; it is out of scope.
   `fty.matchup_result` does not exist yet — an unpaused row would have that runner
   calling a method against a schema with no such table. Flip it when the schemas
   swap.
+
+  Daily is the right cadence and needs no special handling. `get_matchup_result`
+  defaults to `con.currentMatchupPeriod` and scopes its delete to that period, so
+  each run refreshes the live period in place. `util.update_log` shows the existing
+  job running daily at ~15:06 UTC, and under it periods 1-15 of 2025-26 came out
+  exactly right — refetching closed periods on a schedule is not needed.
+  `backfill_matchups()` stays a manual tool for seeding and repair.
+
+- `league`, `league_categories`, `league_competitor` and `league_matchup_dates`
+  need no `update_schedule` rows: they are derived once at the start of a season.
 - **Five views were never ported:** `fty_base_vw`, `fty_free_agents_vw`,
   `fty_league_schedule_vw`, `fty_recent_activity_vw`,
   `fty_team_roster_schedule_vw`. Each needs checking against the new shapes
@@ -321,11 +320,6 @@ Yahoo's handler was left alone beyond the schema threading; it is out of scope.
   consults the registration, and `conform()` passes an unregistered table through
   untouched. Both new writers build frames from an explicit `pl.DataFrame` schema,
   so their column order is already deterministic.
-- **Four tables have no `update_schedule` row at all** — `league`,
-  `league_categories`, `league_competitor`, `league_matchup_dates`. That predates
-  this work, but it means nothing schedules them.
-- `fty.matchup_box_score` should not be carried across (see Verification); refetch
-  with `backfill_matchups()` instead.
 
 ## Files
 
