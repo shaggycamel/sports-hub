@@ -183,7 +183,7 @@ class YahooNbaHandler(FtyHandler):
                     )
 
         df_already_done = self.db.read(
-            f"SELECT * FROM fty.recent_activity WHERE season = '{con.season}' AND platform = 'Yahoo' AND league_id = {con.league_id}",
+            f"SELECT * FROM {self.schema}.recent_activity WHERE season = '{con.season}' AND platform = 'Yahoo' AND league_id = {con.league_id}",
         )
         return pl.DataFrame(dfs).join(df_already_done, on=df_already_done.columns, how="anti")
 

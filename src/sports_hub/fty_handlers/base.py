@@ -12,8 +12,9 @@ class FtyHandler:
     per-combination details itself.
     """
 
-    def __init__(self, db):
+    def __init__(self, db, schema: str = "fty"):
         self.db = db
+        self.schema = schema
 
     def connect(self, league_id: int, season_year: int, creds: dict):
         """
@@ -46,6 +47,9 @@ class FtyHandler:
         raise NotImplementedError
 
     def get_matchup_box_score(self, con) -> pl.DataFrame:
+        raise NotImplementedError
+
+    def get_matchup_result(self, con) -> pl.DataFrame:
         raise NotImplementedError
 
     def get_league_byes(self, con) -> pl.DataFrame:

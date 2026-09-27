@@ -9,7 +9,12 @@ logger = logging.getLogger(__name__)
 
 class FtyComponent:
     """
-    Fantasy platform integration — writes into the fty.* schema.
+    Fantasy platform integration — writes into the schema named by `schema`
+    (default "fty"; pass "fty_dev" to target the redesign).
+
+    Credentials are the one exception: customer_platform is always read from
+    fty, so secrets live in a single place rather than being copied into every
+    working schema.
 
     Connections are scoped per LEAGUE, not per customer: multiple customers
     can belong to the same league, and fetching that league's data once
@@ -25,16 +30,17 @@ class FtyComponent:
     handler (see FtyHandler.connect), not read from Context — Context only
     holds things genuinely generic across every sport/platform.
 
-    NOTE: assumes fty.league has a `sport` column so leagues can be routed
+    NOTE: assumes league has a `sport` column so leagues can be routed
     to the right handler. The original schema this was ported from was
     NBA-only and didn't have one — add it before running this for real.
     """
 
-    def __init__(self, db, ctx, sport: str, leagues: pl.DataFrame):
+    def __init__(self, db, ctx, sport: str, leagues: pl.DataFrame, schema: str = "fty"):
         self.db = db
         self.ctx = ctx
         self.sport = sport
-        self.handlers = {key: cls(db) for key, cls in HANDLERS.items()}
+        self.schema = schema
+        self.handlers = {key: cls(db, schema) for key, cls in HANDLERS.items()}
         self.leagues = self._connect_leagues(leagues)
 
     def connect_leagues(self, leagues: pl.DataFrame | None = None, season: str | None = None) -> None:
@@ -136,7 +142,7 @@ class FtyComponent:
     def _dispatch(self, method_name: str) -> list:
         dfs = []
         for (sport, platform, league_id), con in self.leagues.items():
-            logger.info("%s;%s fty.%s", platform, league_id, method_name)
+            logger.info(f"%s;%s {self.schema}.%s", platform, league_id, method_name)
             handler = self.handlers[(sport, platform)]
             dfs.append(getattr(handler, method_name)(con))
         return dfs
@@ -147,12 +153,12 @@ class FtyComponent:
             return
 
         self.db.execute(
-            f"DELETE FROM fty.league "
+            f"DELETE FROM {self.schema}.league "
             f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
         )
         df = pl.concat(self._dispatch("get_league"))
-        self.db.write(df, "league", schema="fty")
-        logger.info("fty.league has been updated (%d rows)", len(df))
+        self.db.write(df, "league", schema=self.schema)
+        logger.info(f"{self.schema}.league has been updated (%d rows)", len(df))
 
     def get_league_categories(self):
         if not self.leagues:
@@ -160,12 +166,12 @@ class FtyComponent:
             return
 
         self.db.execute(
-            f"DELETE FROM fty.league_categories "
+            f"DELETE FROM {self.schema}.league_categories "
             f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
         )
         df = pl.concat(self._dispatch("get_league_categories"))
-        self.db.write(df, "league_categories", schema="fty")
-        logger.info("fty.league_categories has been updated (%d rows)", len(df))
+        self.db.write(df, "league_categories", schema=self.schema)
+        logger.info(f"{self.schema}.league_categories has been updated (%d rows)", len(df))
 
     def get_free_agents(self):
         if not self.leagues:
@@ -173,12 +179,12 @@ class FtyComponent:
             return
 
         self.db.execute(
-            f"DELETE FROM fty.free_agents "
+            f"DELETE FROM {self.schema}.free_agents "
             f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
         )
         df = pl.concat(self._dispatch("get_free_agents"))
-        self.db.write(df, "free_agents", schema="fty")
-        logger.info("fty.free_agents has been updated (%d rows)", len(df))
+        self.db.write(df, "free_agents", schema=self.schema)
+        logger.info(f"{self.schema}.free_agents has been updated (%d rows)", len(df))
 
     def get_league_competitor(self):
         if not self.leagues:
@@ -186,12 +192,12 @@ class FtyComponent:
             return
 
         self.db.execute(
-            f"DELETE FROM fty.league_competitor "
+            f"DELETE FROM {self.schema}.league_competitor "
             f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
         )
         df = pl.concat(self._dispatch("get_league_competitor"))
-        self.db.write(df, "league_competitor", schema="fty")
-        logger.info("fty.league_competitor has been updated (%d rows)", len(df))
+        self.db.write(df, "league_competitor", schema=self.schema)
+        logger.info(f"{self.schema}.league_competitor has been updated (%d rows)", len(df))
 
     def get_league_matchup(self):
         if not self.leagues:
@@ -199,17 +205,17 @@ class FtyComponent:
             return
 
         self.db.execute(
-            "DELETE FROM fty.league_matchup "
+            f"DELETE FROM {self.schema}.league_matchup "
             f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
         )
         df = pl.concat(self._dispatch("get_league_matchup"))
-        self.db.write(df, "league_matchup", schema="fty")
-        logger.info("fty.league_matchup has been updated (%d rows)", len(df))
+        self.db.write(df, "league_matchup", schema=self.schema)
+        logger.info(f"{self.schema}.league_matchup has been updated (%d rows)", len(df))
 
     def get_recent_activity(self):
         df = pl.concat(self._dispatch("get_recent_activity"))
-        self.db.write(df, "recent_activity", schema="fty")
-        logger.info("fty.recent_activity has been updated (%d rows)", len(df))
+        self.db.write(df, "recent_activity", schema=self.schema)
+        logger.info(f"{self.schema}.recent_activity has been updated (%d rows)", len(df))
 
     def get_competitor_roster(self):
         if not self.leagues:
@@ -218,12 +224,12 @@ class FtyComponent:
 
         df_mup = self.db.read(
             "SELECT * "
-            "FROM fty.league_matchup_dates "
+            f"FROM {self.schema}.league_matchup_dates "
             f"WHERE '{self.ctx.date_est}' BETWEEN matchup_start AND matchup_end",
         )
 
         self.db.execute(
-            "DELETE FROM fty.competitor_roster "
+            f"DELETE FROM {self.schema}.competitor_roster "
             f"WHERE assigned_date = '{self.ctx.date_est}' AND league_id IN ({self.league_ids})",
         )
 
@@ -233,7 +239,7 @@ class FtyComponent:
             .join(df_mup, on=["platform", "league_id"], how="left")
         )
 
-        self.db.write_ordered(df, "competitor_roster", schema="fty")
+        self.db.write_ordered(df, "competitor_roster", schema=self.schema)
 
     def get_matchup_box_score(self):
         # Kept per-league (not batched into one _dispatch call) since leagues
@@ -244,22 +250,52 @@ class FtyComponent:
             return
 
         for (sport, platform, league_id), con in self.leagues.items():
-            logger.info("%s;%s fty.matchup_box_score", platform, league_id)
+            logger.info(f"%s;%s {self.schema}.matchup_box_score", platform, league_id)
             handler = self.handlers[(sport, platform)]
             df = handler.get_matchup_box_score(con)
 
             if df.is_empty():
-                logger.info("%s;%s fty.matchup_box_score: nothing returned — skipped", platform, league_id)
+                logger.info(f"%s;%s {self.schema}.matchup_box_score: nothing returned — skipped", platform, league_id)
                 continue
 
             self.db.execute(
-                "DELETE FROM fty.matchup_box_score "
+                f"DELETE FROM {self.schema}.matchup_box_score "
                 f"WHERE season = '{con.season}' "
                 f"AND platform = '{platform}' AND league_id = {league_id} "
                 f"AND matchup = {df['matchup'][0]}",
             )
-            self.db.write(df, "matchup_box_score", schema="fty")
-            logger.info("%s;%s fty.matchup_box_score has been updated (%d rows)", platform, league_id, len(df))
+            self.db.write(df, "matchup_box_score", schema=self.schema)
+            logger.info(f"%s;%s {self.schema}.matchup_box_score has been updated (%d rows)", platform, league_id, len(df))
+
+    def get_matchup_result(self):
+        """
+        The outcome of the current matchup period, one row per competitor.
+
+        Kept per-league rather than batched for the same reason as
+        get_matchup_box_score: leagues can be on different matchup periods, so
+        the delete has to be scoped to the period each league actually returned.
+        """
+        if not self.leagues:
+            logger.warning("No leagues connected — skipping get_matchup_result")
+            return
+
+        for (sport, platform, league_id), con in self.leagues.items():
+            logger.info(f"%s;%s {self.schema}.matchup_result", platform, league_id)
+            handler = self.handlers[(sport, platform)]
+            df = handler.get_matchup_result(con)
+
+            if df.is_empty():
+                logger.info(f"%s;%s {self.schema}.matchup_result: nothing returned — skipped", platform, league_id)
+                continue
+
+            self.db.execute(
+                f"DELETE FROM {self.schema}.matchup_result "
+                f"WHERE season = '{con.season}' "
+                f"AND platform = '{platform}' AND league_id = {league_id} "
+                f"AND matchup = {df['matchup'][0]}",
+            )
+            self.db.write(df, "matchup_result", schema=self.schema)
+            logger.info(f"%s;%s {self.schema}.matchup_result has been updated (%d rows)", platform, league_id, len(df))
 
     def get_league_byes(self):
         if not self.leagues:
@@ -267,14 +303,14 @@ class FtyComponent:
             return
 
         for (sport, platform, league_id), con in self.leagues.items():
-            logger.info("%s;%s fty.league_byes", platform, league_id)
+            logger.info(f"%s;%s {self.schema}.league_byes", platform, league_id)
             handler = self.handlers[(sport, platform)]
             df = handler.get_league_byes(con)
 
             self.db.execute(
-                "DELETE FROM fty.league_byes "
+                f"DELETE FROM {self.schema}.league_byes "
                 f"WHERE season = '{con.season}' "
                 f"AND platform = '{platform}' AND league_id = {league_id}"
             )
-            self.db.write(df, "league_byes", schema="fty")
-            logger.info("%s;%s fty.league_byes has been updated (%d rows)", platform, league_id, len(df))
+            self.db.write(df, "league_byes", schema=self.schema)
+            logger.info(f"%s;%s {self.schema}.league_byes has been updated (%d rows)", platform, league_id, len(df))

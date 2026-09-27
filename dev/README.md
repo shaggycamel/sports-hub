@@ -123,24 +123,69 @@ table. It reconciles against `fty.matchup_box_score` row for row — 1,352 of
 1,352, no unmatched keys, `pts` and `fgm` exact. `fg_pct`/`ft_pct` differ by
 5e-9, which is ESPN's float32 rounding; the derived value is the more precise.
 
+## The handler
+
+`FtyComponent` and `FtyHandler` now take a `schema` argument (default `"fty"`),
+so the same code targets either schema:
+
+```python
+f = FtyComponent(db, ctx, "nba", leagues, schema="fty_dev")
+f.get_matchup_box_score()
+f.get_matchup_result()
+```
+
+Credentials are the one thing still read from `fty` regardless.
+
+`get_matchup_box_score` returns long rows and takes different routes per format,
+because ESPN hands them different shapes — not because the output differs:
+
+- **category** — `cumulativeScore.scoreByStat` already holds team totals per
+  category, so they are read straight off it.
+- **points** — `H2HPointsBoxScore` has no `home_stats` at all, so totals are
+  summed from the lineup, reading ESPN's raw response rather than `BoxPlayer`.
+  `BoxPlayer.points_breakdown` cannot be used: it prefers `appliedStats`, which
+  are already multiplied by the league's weights, and it keeps no copy of the raw
+  `stats`. One extra request per league, not per team.
+
+Which categories get stored comes from `platform_category` joined to
+`category_label`, so a label ESPN reports with no mapping is dropped rather than
+stored under a platform-native name, and ratio categories are excluded.
+
+`get_matchup_result` reads ESPN's own outcome rather than recomputing it:
+`cumulativeScore.wins/losses/ties` for a category league (score = wins +
+ties/2), `home_score` for a points league. `totalPoints` is **not** usable as a
+general score — ESPN reports it as 0.0 for category leagues.
+
+### Verified on live data
+
+Against 2025-26 Let's Get Tropical, matchup 20:
+
+- 110 long rows, 10 competitors × 11 stored categories, ratios correctly absent
+- re-running replaced rows rather than duplicating them (110 → 110)
+- **derived FG% matches ESPN's own reported FG% to 5e-9 for all ten
+  competitors** — the check that matters, since the stored percentage was dropped
+- `matchup_result`: reciprocal pairs, complementary scores, every
+  `cat_won + cat_lost + cat_tied` equal to the league's 9 scored categories
+
 ## Still open
 
-`fty_dev.matchup_result` is created and empty. It needs the handler, which has
-not been touched yet:
+**The points-league path is written but unverified.** The only registered points
+league is 2026-27 National Basketball Cup, and its season has not started —
+`box_scores()` returns `H2HPointsBoxScore` objects with `home_score: 0`, empty
+lineups and `winner: UNDECIDED`. Two things to confirm once games are played:
 
-- point it at `fty_dev`
-- write every key in `home_stats`, not the ones listed in `league_categories` —
-  that list no longer contains the components
-- for points leagues, sum **raw** stats across the lineup.
-  `H2HPointsBoxScore` exposes no `home_stats` at all, only `home_score`, and
-  `BoxPlayer.points_breakdown` prefers `appliedStats`, which is already
-  weighted — storing that in `value` would break the shared meaning of the table
-- populate `matchup_result` from ESPN's reported outcome (`totalPoints` for
-  points leagues, `cumulativeScore.wins/ties/losses` for category)
+- that summed lineup totals agree with ESPN's own `appliedStatTotal`
+- that the bench/IR filter is right. Only non-bench slots are summed, on the
+  assumption bench players do not score; verify against the league's settings.
 
-Also unresolved: `BoxPlayer` overwrites `points_breakdown` on every iteration of
-a player's `stats` array, keeping only the last entry. Worth pinning down which
-entry that is before trusting it.
+A related caveat that did **not** bite for category leagues: `BoxPlayer`
+overwrites `points_breakdown` on every entry of a player's `stats` array,
+keeping the last. For a category league there is only one entry
+(`statSourceId=0`, `statSplitTypeId=5`), so nothing is lost. A points league may
+carry projections alongside actuals, which is why the raw path filters to
+`statSourceId == 0` explicitly.
+
+Yahoo's handler was left alone beyond the schema threading; it is out of scope.
 
 ## Files
 
