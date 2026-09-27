@@ -17,7 +17,6 @@ CREATE TABLE fty_dev.league_byes           AS SELECT * FROM fty.league_byes     
 CREATE TABLE fty_dev.competitor_roster     AS SELECT * FROM fty.competitor_roster     WHERE platform = 'ESPN';
 CREATE TABLE fty_dev.free_agents           AS SELECT * FROM fty.free_agents           WHERE platform = 'ESPN';
 CREATE TABLE fty_dev.recent_activity       AS SELECT * FROM fty.recent_activity       WHERE platform = 'ESPN';
-CREATE TABLE fty_dev.matchup_box_score_wide AS SELECT * FROM fty.matchup_box_score    WHERE platform = 'ESPN';
 
 -- ------------------------------------------------- reference-data repair (ESPN)
 -- A. Drop the shooting-component padding. ESPN's scoringItems never held these
@@ -109,16 +108,12 @@ CREATE TABLE fty_dev.matchup_box_score (
   PRIMARY KEY (season, platform, league_id, matchup, competitor_id, category)
 );
 
-INSERT INTO fty_dev.matchup_box_score
-  (season, platform, league_id, matchup, competitor_id, category, value)
-SELECT bs.season, bs.platform, bs.league_id, bs.matchup, bs.competitor_id, u.category, u.value
-FROM fty_dev.matchup_box_score_wide bs
-CROSS JOIN LATERAL (VALUES
-  ('pts', bs.pts), ('blk', bs.blk), ('stl', bs.stl), ('ast', bs.ast), ('reb', bs.reb),
-  ('tov', bs.tov), ('fgm', bs.fgm), ('fga', bs.fga), ('ftm', bs.ftm), ('fta', bs.fta),
-  ('fg3_m', bs.fg3_m), ('dd2', bs.dd2), ('td3', bs.td3)
-) AS u(category, value)
-WHERE u.value IS NOT NULL;
+-- Left EMPTY on purpose, and deliberately not seeded from fty.matchup_box_score:
+-- those rows are partial mid-matchup snapshots. Deriving the category record from
+-- them disagrees with ESPN's own cumulativeScore on 262 of 1,342 rows, where the
+-- refetched values disagree on 0 of 1,534. Fill this with
+-- FtyComponent.backfill_matchups(), which reads every period from ESPN.
+-- Empty is better than wrong.
 
 -- --------------------------------------------------------- the matchup outcome
 -- Format-agnostic: `score` is categories won for H2H_CATEGORY, matchup win for

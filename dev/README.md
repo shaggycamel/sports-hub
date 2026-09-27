@@ -8,12 +8,19 @@ ESPN only. Yahoo is out of scope, and ESPN's vocabulary (`H2H_CATEGORY`,
 
 ## Rebuilding the schema
 
-`build_fty_dev.sql` is the only definition of `fty_dev` and is idempotent — it
-opens with `DROP SCHEMA IF EXISTS fty_dev CASCADE`, so re-running it recreates
-everything from `fty`.
+Two steps, and the second is not optional.
+
+`build_fty_dev.sql` defines the schema and is idempotent — it opens with
+`DROP SCHEMA IF EXISTS fty_dev CASCADE`. It creates `matchup_box_score` and
+`matchup_result` **empty** and does not seed them from `fty.matchup_box_score`,
+because those rows are partial (see Verification). A rebuild alone therefore
+leaves you with reference data and no matchup history.
 
 ```python
 from sports_hub.db import Database
+from sports_hub.context import Context
+from sports_hub.fty import FtyComponent
+
 db = Database(db_con="postgres")
 raw = db.engine.raw_connection()
 try:
@@ -22,10 +29,26 @@ try:
     raw.commit()                                        # leaves the FG% / FT%
 finally:                                                # literals alone
     raw.close()
+
+# then refill from ESPN — a few minutes, roughly 250 requests
+for year, league_id in [(2023, 1966813226), (2024, 95537), (2024, 1966813226),
+                        (2025, 24608), (2025, 95537), (2025, 1382487116),
+                        (2025, 1966813226)]:
+    ctx = Context(db)
+    ctx.cur_season_year = year
+    leagues = db.read(
+        "SELECT DISTINCT cl.platform, cl.league_id, cp.credentials "
+        "FROM fty.customer_league cl "
+        "JOIN fty.customer_platform cp "
+        "  ON cp.customer_id = cl.customer_id AND cp.platform = cl.platform "
+        f"WHERE cl.league_id = {league_id}")
+    FtyComponent(db, ctx, "nba", leagues, schema="fty_dev").backfill_matchups()
 ```
 
 Passing parameters makes psycopg2 read the `%` in `'FG%'` as a placeholder, so
-the script has to run with no `vars` argument.
+the script has to run with no `vars` argument. To test a change to the script
+without disturbing `fty_dev`, run it with `fty_dev` replaced by a scratch schema
+name and drop that afterwards.
 
 Credentials are deliberately **not** copied into `fty_dev`; code reads
 `fty.customer_platform` so secrets live in one place.
