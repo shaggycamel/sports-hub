@@ -12,14 +12,14 @@ class FtyComponent:
     Fantasy platform integration — writes into the schema named by `schema`
     (default "fty"; pass "fty_dev" to target the redesign).
 
-    Credentials are the one exception: customer_platform is always read from
-    fty, so secrets live in a single place rather than being copied into every
-    working schema.
+    Credentials come from the same schema as everything else — customer_platform
+    is replicated into each working schema — so a schema is self-contained and
+    can stand in for fty wholesale.
 
     Connections are scoped per LEAGUE, not per customer: multiple customers
     can belong to the same league, and fetching that league's data once
     (rather than once per customer) avoids redundant API calls. Customer
-    attribution is a separate join against fty.customer_league downstream,
+    attribution is a separate join against customer_league downstream,
     not something this component filters by.
 
     Each (sport, platform) combination has its own handler (see
@@ -71,8 +71,8 @@ class FtyComponent:
         """
         return self.db.read(
             "SELECT DISTINCT cl.platform, cl.league_id, cp.credentials "
-            "FROM fty.customer_league cl "
-            "JOIN fty.customer_platform cp "
+            f"FROM {self.schema}.customer_league cl "
+            f"JOIN {self.schema}.customer_platform cp "
             "  ON cp.customer_id = cl.customer_id AND cp.platform = cl.platform "
             f"WHERE cl.season = '{season}'"
         )

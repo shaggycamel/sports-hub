@@ -18,6 +18,19 @@ CREATE TABLE fty_dev.competitor_roster     AS SELECT * FROM fty.competitor_roste
 CREATE TABLE fty_dev.free_agents           AS SELECT * FROM fty.free_agents           WHERE platform = 'ESPN';
 CREATE TABLE fty_dev.recent_activity       AS SELECT * FROM fty.recent_activity       WHERE platform = 'ESPN';
 
+-- Customer objects. fty_dev is intended to replace fty, so these come across
+-- too — including customer_platform, which holds credentials. That means the
+-- secrets now exist in two schemas until fty is retired; keep that in mind.
+-- customer has no platform column, so all of it copies; the two mapping tables
+-- are ESPN-only like everything else here.
+CREATE TABLE fty_dev.customer          AS SELECT * FROM fty.customer;
+CREATE TABLE fty_dev.customer_league   AS SELECT * FROM fty.customer_league   WHERE platform = 'ESPN';
+CREATE TABLE fty_dev.customer_platform AS SELECT * FROM fty.customer_platform WHERE platform = 'ESPN';
+
+ALTER TABLE fty_dev.customer          ADD PRIMARY KEY (customer_id);
+ALTER TABLE fty_dev.customer_league   ADD PRIMARY KEY (customer_id, season, platform, league_id);
+ALTER TABLE fty_dev.customer_platform ADD PRIMARY KEY (customer_id, platform);
+
 -- ------------------------------------------------- reference-data repair (ESPN)
 -- A. Drop the shooting-component padding. ESPN's scoringItems never held these
 --    for category leagues; they were added so the box-score fetch (which reads

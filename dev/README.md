@@ -38,8 +38,8 @@ for year, league_id in [(2023, 1966813226), (2024, 95537), (2024, 1966813226),
     ctx.cur_season_year = year
     leagues = db.read(
         "SELECT DISTINCT cl.platform, cl.league_id, cp.credentials "
-        "FROM fty.customer_league cl "
-        "JOIN fty.customer_platform cp "
+        "FROM fty_dev.customer_league cl "
+        "JOIN fty_dev.customer_platform cp "
         "  ON cp.customer_id = cl.customer_id AND cp.platform = cl.platform "
         f"WHERE cl.league_id = {league_id}")
     FtyComponent(db, ctx, "nba", leagues, schema="fty_dev").backfill_matchups()
@@ -50,8 +50,10 @@ the script has to run with no `vars` argument. To test a change to the script
 without disturbing `fty_dev`, run it with `fty_dev` replaced by a scratch schema
 name and drop that afterwards.
 
-Credentials are deliberately **not** copied into `fty_dev`; code reads
-`fty.customer_platform` so secrets live in one place.
+The customer objects are replicated too, `customer_platform` included, so a
+schema is self-contained and can stand in for `fty` wholesale — `FtyComponent`
+reads credentials from whichever schema it was given. The trade-off is that the
+credentials now exist in two schemas until `fty` is retired.
 
 ## The design
 
@@ -288,6 +290,42 @@ carry projections alongside actuals, which is why the raw path filters to
 `statSourceId == 0` explicitly.
 
 Yahoo's handler was left alone beyond the schema threading; it is out of scope.
+
+## Replacing fty
+
+`fty_dev` is intended to replace `fty`, not sit beside it. What that needs:
+
+**Done**
+
+- customer objects replicated (`customer`, `customer_league`, `customer_platform`)
+  with primary keys, and `FtyComponent._registered_leagues` now reads credentials
+  from its own schema rather than a hardcoded `fty`
+- `util.update_schedule` row added for the new method:
+  `fty | matchup_result | fty.get_matchup_result`
+
+**Outstanding**
+
+- **Unpause that row.** It is inserted with `pause = true` on purpose. Nothing in
+  this repo reads `util.update_schedule`, so an external runner drives it, and
+  `fty.matchup_result` does not exist yet — an unpaused row would have that runner
+  calling a method against a schema with no such table. Flip it when the schemas
+  swap.
+- **Five views were never ported:** `fty_base_vw`, `fty_free_agents_vw`,
+  `fty_league_schedule_vw`, `fty_recent_activity_vw`,
+  `fty_team_roster_schedule_vw`. Each needs checking against the new shapes
+  before being copied across; `fty_league_schedule_vw` in particular reads
+  `league_matchup`, and any of them may touch a column that moved.
+- **`util.table_column_order` needs nothing**, but worth knowing why: only
+  `fty.competitor_roster` is registered, and `get_competitor_roster` is the sole
+  method using `write_ordered`. Everything else calls `db.write`, which never
+  consults the registration, and `conform()` passes an unregistered table through
+  untouched. Both new writers build frames from an explicit `pl.DataFrame` schema,
+  so their column order is already deterministic.
+- **Four tables have no `update_schedule` row at all** — `league`,
+  `league_categories`, `league_competitor`, `league_matchup_dates`. That predates
+  this work, but it means nothing schedules them.
+- `fty.matchup_box_score` should not be carried across (see Verification); refetch
+  with `backfill_matchups()` instead.
 
 ## Files
 
