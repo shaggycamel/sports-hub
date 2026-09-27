@@ -4,7 +4,7 @@
 
 -- 1. IS THERE ANYTHING TO DO?
 -- The daily jobs that write the source tables are the detector. Non-empty means
--- run utility.conform_player_ids(db, ctx.cur_season).
+-- run hub.util.conform_player_ids().
 SELECT platform, count(*) AS unresolved
 FROM util.unmatched_player_source_vw
 GROUP BY 1 ORDER BY 1;

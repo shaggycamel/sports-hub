@@ -476,7 +476,18 @@ non-alpha, IMMUTABLE so it can be indexed), which every match goes through.
 
 ## The matcher
 
-`utility.conform_player_ids(db, season=None)` — two SQL statements, no staging
+`UtilComponent` sits on the hub alongside the other three, because util.* belongs
+to no single domain and every component reads it through `ctx.active_ids`:
+
+```python
+hub.util.conform_player_ids()   # this season — the routine call, safe to repeat
+hub.util.backfill_player_ids()  # every season — the one-off seed / post-rebuild repair
+```
+
+The split mirrors `FtyComponent.get_matchup_result` / `backfill_matchups`.
+
+
+`hub.util.conform_player_ids()` — two SQL statements, no staging
 table and no upsert. The first mints a player for any unmatched normalised name
 nobody owns; the second attaches every unmatched source id to the player holding
 that name. Re-running is a no-op because the second statement's output is exactly
@@ -496,7 +507,7 @@ the 2025-26 pre-season seed.
 
 Instead `util.unmatched_player_source_vw` is the backlog, and the daily jobs that
 write the source tables are already the detector. Non-empty means run
-`conform_player_ids`. Run it at season start; check the view otherwise.
+`hub.util.conform_player_ids()`. Run it at season start; check the view otherwise.
 
 ## Verified state
 
@@ -511,7 +522,7 @@ Seeded from the 1158 old rows, then the full history resolved:
 | unmatched backlog | **0** |
 | 2025-26 coverage | nba 683/683, statyx 703/703, espn 1098/1098 |
 
-`conform_player_ids` run twice in a row resolves 2199 then 0. Spot-checked:
+`backfill_player_ids()` run twice in a row resolves 2199 then 0. Spot-checked:
 Cameron Payne holds all four platform ids on one key; Egor Dëmin holds **both**
 of ESPN's duplicate ids (5175643, 5243213); the bogus `nba:196294141` for Norris
 Cole is gone.

@@ -6,6 +6,7 @@ from sports_hub.context import Context
 from sports_hub.nba import NBAComponent
 from sports_hub.fty import FtyComponent
 from sports_hub.statyx import StatyxComponent
+from sports_hub.utility import UtilComponent
 
 
 class SportsHub:
@@ -19,6 +20,7 @@ class SportsHub:
         hub.nba.get_player_season_stats()
         hub.fty.sync_rosters()          # once fty.py is filled in
         hub.statyx.get_player_advanced_stats()
+        hub.util.conform_player_ids()   # resolve any new player ids
     """
 
     def __init__(self, ini_path: str | None = None, db_con: str | None = None, sport: str = "nba", leagues: pl.DataFrame | None = None):
@@ -41,3 +43,4 @@ class SportsHub:
         self.nba = NBAComponent(self.db, self.ctx)
         self.fty = FtyComponent(self.db, self.ctx, sport, leagues if leagues is not None else pl.DataFrame())
         self.statyx = StatyxComponent(self.db, self.ctx, sport=sport)
+        self.util = UtilComponent(self.db, self.ctx)

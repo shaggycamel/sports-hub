@@ -77,7 +77,7 @@ WHERE cr.player_fantasy_id IS NOT NULL;
 -- The join to player_source_id is a LEFT join on purpose: a source id that
 -- identity resolution has not reached yet still drives a fetch loop. A brand new
 -- player is fetched on the first run that sees them, and acquires a player_key
--- whenever util.conform_player_ids next runs.
+-- whenever hub.util.conform_player_ids() next runs.
 CREATE VIEW util.active_player_vw AS
 SELECT DISTINCT ON (d.season, d.platform, d.source_id)
        d.season,
@@ -92,7 +92,7 @@ LEFT JOIN util.player p ON p.player_key = m.player_key
 ORDER BY d.season, d.platform, d.source_id, d.source_name;
 
 -- The resolution backlog: source ids the directory has seen that no player owns.
--- Non-empty means util.conform_player_ids has work to do. This is what replaces
+-- Non-empty means hub.util.conform_player_ids() has work to do. This is what replaces
 -- a util.update_schedule row — the daily jobs that write the source tables are
 -- already the detector, so no new scheduled job is needed.
 --
@@ -102,7 +102,7 @@ ORDER BY d.season, d.platform, d.source_id, d.source_name;
 -- "Mike Miles" in the box scores and "Mike Miles Jr." on the roster — and a
 -- matcher reading a per-name grain mints a player for each spelling while only
 -- ever mapping the id once, leaving a stray player owning nothing. Both
--- statements of conform_player_ids read this view, so both see one name per id.
+-- statements of UtilComponent._conform read this view, so both see one name per id.
 CREATE VIEW util.unmatched_player_source_vw AS
 SELECT DISTINCT ON (d.platform, d.source_id)
        d.season, d.platform, d.source_id, d.source_name
