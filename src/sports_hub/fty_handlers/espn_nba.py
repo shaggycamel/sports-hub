@@ -277,7 +277,7 @@ class EspnNbaHandler(FtyHandler):
                     totals[stored[label]] = totals.get(stored[label], 0) + value
         return totals
 
-    def get_matchup_box_score(self, con) -> pl.DataFrame:
+    def get_matchup_box_score(self, con, matchup_period: int | None = None) -> pl.DataFrame:
         """
         One row per (competitor, category) for the current matchup period.
 
@@ -292,7 +292,8 @@ class EspnNbaHandler(FtyHandler):
         the players. Presence of the `_stats` attribute is the test, since that
         is the actual difference between the two classes.
         """
-        box_scores = con.box_scores(matchup_period=con.currentMatchupPeriod)
+        matchup_period = matchup_period or con.currentMatchupPeriod
+        box_scores = con.box_scores(matchup_period=matchup_period)
         stored = self._stored_categories()
         rosters = None
 
@@ -309,7 +310,7 @@ class EspnNbaHandler(FtyHandler):
                     )
                 else:
                     if rosters is None:      # one extra request per league, not per team
-                        rosters = self._raw_matchup_rosters(con, con.currentMatchupPeriod)
+                        rosters = self._raw_matchup_rosters(con, matchup_period)
                     totals = self._totals_from_players(
                         rosters.get(competitor.team_id, []), stored
                     )
@@ -320,7 +321,7 @@ class EspnNbaHandler(FtyHandler):
                             "season": con.season,
                             "platform": self.NAME,
                             "league_id": con.league_id,
-                            "matchup": con.currentMatchupPeriod,
+                            "matchup": matchup_period,
                             "competitor_id": competitor.team_id,
                             "category": category,
                             "value": value,
@@ -340,7 +341,7 @@ class EspnNbaHandler(FtyHandler):
             },
         )
 
-    def get_matchup_result(self, con) -> pl.DataFrame:
+    def get_matchup_result(self, con, matchup_period: int | None = None) -> pl.DataFrame:
         """
         One row per competitor per matchup: the outcome as ESPN reports it,
         not recomputed here.
@@ -353,7 +354,8 @@ class EspnNbaHandler(FtyHandler):
         Note ESPN reports totalPoints as 0.0 for category leagues, so it cannot
         stand in as a general score; each format's own field is read instead.
         """
-        box_scores = con.box_scores(matchup_period=con.currentMatchupPeriod)
+        matchup_period = matchup_period or con.currentMatchupPeriod
+        box_scores = con.box_scores(matchup_period=matchup_period)
 
         dfs = []
         for box_score in box_scores:
@@ -383,7 +385,7 @@ class EspnNbaHandler(FtyHandler):
                         "season": con.season,
                         "platform": self.NAME,
                         "league_id": con.league_id,
-                        "matchup": con.currentMatchupPeriod,
+                        "matchup": matchup_period,
                         "competitor_id": competitor.team_id,
                         "opponent_id": None if opponent == 0 else opponent.team_id,
                         "score": float(score),

@@ -184,7 +184,11 @@ SELECT c.season, c.platform, c.league_id, bs.matchup, bs.competitor_id,
        c.nba_category AS category, c.fmt_category, c.display_order,
        c.scoring_type, c.scoring_format, c.higher_is_better,
        CASE WHEN c.is_ratio
-            THEN num.value / NULLIF(den.value, 0)
+            -- ESPN reports 0 attempts as 0.0 with result LOSS, not as
+            -- undefined, so a ratio with no denominator coalesces to 0 rather
+            -- than NULL. A NULL would drop the category from the comparison and
+            -- disagree with ESPN on any all-zero (forfeited) matchup.
+            THEN COALESCE(num.value / NULLIF(den.value, 0), 0)
             ELSE bs.value
        END AS value,
        CASE WHEN c.points IS NOT NULL THEN bs.value * c.points END AS fantasy_points
@@ -216,10 +220,10 @@ SELECT bs.season, bs.platform, bs.league_id, bs.competitor_id, bs.matchup,
        max(bs.value) FILTER (WHERE bs.category = 'ftm')   AS ftm,
        max(bs.value) FILTER (WHERE bs.category = 'fta')   AS fta,
        max(bs.value) FILTER (WHERE bs.category = 'fg3_m') AS fg3_m,
-       max(bs.value) FILTER (WHERE bs.category = 'fgm')
-         / NULLIF(max(bs.value) FILTER (WHERE bs.category = 'fga'), 0) AS fg_pct,
-       max(bs.value) FILTER (WHERE bs.category = 'ftm')
-         / NULLIF(max(bs.value) FILTER (WHERE bs.category = 'fta'), 0) AS ft_pct,
+       COALESCE(max(bs.value) FILTER (WHERE bs.category = 'fgm')
+         / NULLIF(max(bs.value) FILTER (WHERE bs.category = 'fga'), 0), 0) AS fg_pct,
+       COALESCE(max(bs.value) FILTER (WHERE bs.category = 'ftm')
+         / NULLIF(max(bs.value) FILTER (WHERE bs.category = 'fta'), 0), 0) AS ft_pct,
        max(bs.value) FILTER (WHERE bs.category = 'dd2')   AS dd2,
        max(bs.value) FILTER (WHERE bs.category = 'td3')   AS td3,
        lc.competitor_abbrev, lc.competitor_name

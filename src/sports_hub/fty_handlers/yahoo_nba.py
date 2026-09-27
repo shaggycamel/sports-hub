@@ -187,7 +187,7 @@ class YahooNbaHandler(FtyHandler):
         )
         return pl.DataFrame(dfs).join(df_already_done, on=df_already_done.columns, how="anti")
 
-    def get_matchup_box_score(self, con) -> pl.DataFrame:
+    def get_matchup_box_score(self, con, matchup_period: int | None = None) -> pl.DataFrame:
         # Not implemented for Yahoo. The query this was built on read
         # fty.league_schedule, which no longer exists. Returning nothing lets the
         # caller skip this league instead of failing the whole run.

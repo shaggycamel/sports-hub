@@ -46,10 +46,10 @@ class FtyHandler:
     def get_recent_activity(self, con) -> pl.DataFrame:
         raise NotImplementedError
 
-    def get_matchup_box_score(self, con) -> pl.DataFrame:
+    def get_matchup_box_score(self, con, matchup_period: int | None = None) -> pl.DataFrame:
         raise NotImplementedError
 
-    def get_matchup_result(self, con) -> pl.DataFrame:
+    def get_matchup_result(self, con, matchup_period: int | None = None) -> pl.DataFrame:
         raise NotImplementedError
 
     def get_league_byes(self, con) -> pl.DataFrame:

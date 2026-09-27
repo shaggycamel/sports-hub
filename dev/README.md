@@ -137,10 +137,42 @@ All ten league-seasons now match ESPN's live `scoringItems` exactly.
 
 ## Verification
 
-`fty_dev.fty_matchup_box_score_vw` rebuilds the old wide shape from the long
-table. It reconciles against `fty.matchup_box_score` row for row — 1,352 of
-1,352, no unmatched keys, `pts` and `fgm` exact. `fg_pct`/`ft_pct` differ by
-5e-9, which is ESPN's float32 rounding; the derived value is the more precise.
+Two checks matter, and one of them changed what is in the table.
+
+**The unpivot was faithful.** Before the backfill, `fty_dev.matchup_box_score`
+was the unpivot of `fty.matchup_box_score`, and the compat view reproduced the
+old wide shape row for row — 1,352 of 1,352, `pts` and `fgm` exact, `fg_pct`
+differing only by ESPN's float32 rounding.
+
+**The backfill then corrected it.** Refetching every matchup period from ESPN
+changed 412 of those 1,352 rows, always upward. The old rows were partial
+mid-matchup snapshots: the original pipeline wrote the in-progress state of the
+current period and never refreshed it once the period closed.
+
+Which is right is not a judgement call — ESPN's own `cumulativeScore` settles it.
+Deriving the category record from the box score and comparing it against
+`matchup_result` (fetched separately from ESPN):
+
+| source of box score values | rows compared | disagreements with ESPN |
+|---|---|---|
+| `fty.matchup_box_score` (old) | 1,342 | **262** |
+| `fty_dev.matchup_box_score` (backfilled) | 1,534 | **0** |
+
+So `fty.matchup_box_score` has roughly a fifth of its rows not reflecting final
+matchup totals. That is a problem in the production schema, not just here, and it
+matters for any eventual promotion: do not carry those values across, refetch
+them. 2023-24 is the one season that was clean on both.
+
+The compat view therefore no longer matches `fty.matchup_box_score`, by design.
+
+### Zero attempts are 0%, not undefined
+
+`fg_pct` was initially `fgm / NULLIF(fga, 0)`, which makes a 0-attempt matchup
+NULL and drops the category from any comparison. ESPN instead reports
+`FG% = 0.0` with `result: LOSS`. Confirmed on 2023-24 matchup 20, where one
+competitor posted an all-zero line (a forfeit): ESPN scored it 1-8, the NULL
+version derived 1-6. Both ratio expressions now coalesce to 0, which is what
+took the disagreement count to zero.
 
 ## The handler
 
@@ -185,6 +217,34 @@ Against 2025-26 Let's Get Tropical, matchup 20:
   competitors** — the check that matters, since the stored percentage was dropped
 - `matchup_result`: reciprocal pairs, complementary scores, every
   `cat_won + cat_lost + cat_tied` equal to the league's 9 scored categories
+
+## Coverage
+
+Backfilled across every league-season that has played games. `matchup_result`
+row counts are exactly `matchups × team_count` in all seven:
+
+| season | league | matchups | box score rows | result rows |
+|---|---|---|---|---|
+| 2023-24 | Let's Get Tropical | 21 | 1,848 | 168 |
+| 2024-25 | Tucked | 20 | 2,640 | 240 |
+| 2024-25 | Let's Get Tropical | 24 | 2,112 | 192 |
+| 2025-26 | Paid In Full | 21 | 3,276 | 252 |
+| 2025-26 | Tucked | 19 | 2,508 | 228 |
+| 2025-26 | $100 8 Cat | 22 | 2,640 | 264 |
+| 2025-26 | Let's Get Tropical | 20 | 2,200 | 200 |
+
+17,224 box score rows, 1,544 results over 147 league-matchups. Zero score
+mismatches; the 10 rows with a null `result` are exactly the 10 byes.
+
+2024-25 Let's Get Tropical had no box scores at all before this — the wide table
+never held any — so its 24 periods came from ESPN fresh.
+
+2026-27 is empty because the season has not started.
+
+`backfill_matchups()` drives the period list from `con.matchup_ids`, capped at
+`currentMatchupPeriod`. That map comes back **empty** for 2023-24, so
+`currentMatchupPeriod` is the fallback — without it that season silently
+backfilled nothing.
 
 ## Still open
 
