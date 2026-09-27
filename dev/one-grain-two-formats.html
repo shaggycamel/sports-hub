@@ -1,0 +1,356 @@
+<title>One Grain, Two Formats</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+
+<style>
+  :root {
+    color-scheme: light;
+    --bg:      #f1f4f3;
+    --surface: #ffffff;
+    --sunken:  #e8edec;
+    --ink:     #0f1d1b;
+    --muted:   #5a6e6b;
+    --faint:   #8a9c99;
+    --line:    #d1dbd9;
+    --cat:     #0f6e66;
+    --pts:     #a8580c;
+    --cat-wash: #dff0ed;
+    --pts-wash: #f8e7d4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg:      #0c1312;
+      --surface: #141e1c;
+      --sunken:  #1b2725;
+      --ink:     #e3ecea;
+      --muted:   #93a7a4;
+      --faint:   #647774;
+      --line:    #27352f;
+      --cat:     #46d2c1;
+      --pts:     #eda155;
+      --cat-wash: #10312d;
+      --pts-wash: #35230f;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg:      #0c1312;
+    --surface: #141e1c;
+    --sunken:  #1b2725;
+    --ink:     #e3ecea;
+    --muted:   #93a7a4;
+    --faint:   #647774;
+    --line:    #27352f;
+    --cat:     #46d2c1;
+    --pts:     #eda155;
+    --cat-wash: #10312d;
+    --pts-wash: #35230f;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+  .wrap {
+    max-width: 62rem;
+    margin: 0 auto;
+    padding-inline: 16px;
+    padding-block: 3.5rem 5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 3rem;
+  }
+
+  h1, h2, h3 { font-family: Archivo, ui-sans-serif, system-ui, sans-serif; text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(1.9rem, 5vw, 2.7rem); font-weight: 700; letter-spacing: -0.021em; line-height: 1.12; }
+  h2 { font-size: 1.16rem; font-weight: 600; letter-spacing: -0.006em; }
+  p  { margin: 0; max-width: 64ch; }
+  code, .mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace; }
+  code { font-size: 0.855em; background: var(--sunken); padding: 0.1em 0.34em; border-radius: 3px; }
+
+  .eyebrow {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.7rem; letter-spacing: 0.15em; text-transform: uppercase;
+    color: var(--faint); margin: 0;
+  }
+  .lede { font-size: 1.1rem; color: var(--muted); max-width: 58ch; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  header { display: flex; flex-direction: column; gap: 0.85rem; }
+  section { display: flex; flex-direction: column; gap: 1rem; }
+
+  figure { margin: 0; display: flex; flex-direction: column; gap: 0.7rem; }
+  .figbox {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 1.25rem 1rem;
+    overflow-x: auto;
+  }
+  figure svg { display: block; width: 100%; min-width: 620px; max-width: 100%; height: auto; color: var(--ink); }
+  figcaption { font-size: 0.86rem; color: var(--muted); max-width: 64ch; }
+  figcaption b { color: var(--ink); font-weight: 600; }
+
+  .mk-ink path { fill: var(--ink); }
+  .mk-cat path { fill: var(--cat); }
+  .mk-pts path { fill: var(--pts); }
+
+  /* sparsity matrix */
+  .matrix { min-width: 640px; border-collapse: collapse; font-size: 0.78rem; }
+  .matrix th, .matrix td { padding: 0; text-align: center; }
+  .matrix thead th {
+    font-family: "JetBrains Mono", monospace; font-weight: 400; font-size: 0.62rem;
+    color: var(--faint); padding-bottom: 0.5rem; width: 30px;
+    writing-mode: vertical-rl; transform: rotate(180deg); height: 48px;
+  }
+  .matrix th.rowhead {
+    writing-mode: horizontal-tb; transform: none; height: auto;
+    text-align: left; font-family: "Source Sans 3", sans-serif; font-size: 0.79rem;
+    font-weight: 400; color: var(--muted); padding-right: 0.8rem; white-space: nowrap; width: auto;
+  }
+  .matrix tbody th.rowhead { color: var(--ink); }
+  .matrix tbody th.rowhead .yr { color: var(--faint); font-family: "JetBrains Mono", monospace; font-size: 0.68rem; margin-right: 0.45rem; }
+  .matrix td { border: 1px solid var(--bg); }
+  .matrix td i { display: block; height: 20px; background: var(--sunken); }
+  .matrix td.on i { background: var(--cat); }
+  .matrix tr.pts td.on i { background: var(--pts); }
+  .matrix tr.pts th.rowhead { color: var(--pts); font-weight: 600; }
+  .matrix td.n { border: 0; font-family: "JetBrains Mono", monospace; font-size: 0.7rem; color: var(--faint); padding-left: 0.7rem; }
+
+  /* before / after column lists */
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); gap: 1rem; }
+  .col {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+    padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: 0.55rem;
+  }
+  .col.after { border-color: var(--ink); }
+  .col h3 { font-size: 0.79rem; font-family: "JetBrains Mono", monospace; font-weight: 600; letter-spacing: 0.02em; }
+  .col ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .col li {
+    font-family: "JetBrains Mono", monospace; font-size: 0.71rem;
+    background: var(--sunken); color: var(--ink);
+    padding: 0.16rem 0.42rem; border-radius: 3px;
+  }
+  .col li.key { background: var(--cat-wash); color: var(--cat); }
+  .col li.gone { background: none; color: var(--faint); text-decoration: line-through; padding-inline: 0.2rem; }
+  .col p { font-size: 0.83rem; color: var(--muted); }
+
+  /* worked example */
+  .calc { min-width: 420px; width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+  .calc th, .calc td { text-align: right; padding: 0.34rem 0.6rem; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  .calc th { font-size: 0.68rem; font-family: "JetBrains Mono", monospace; font-weight: 400; color: var(--faint); text-transform: uppercase; letter-spacing: 0.07em; }
+  .calc td:first-child, .calc th:first-child { text-align: left; font-family: "JetBrains Mono", monospace; }
+  .calc tbody tr:last-child td { border-bottom: 1px solid var(--ink); }
+  .calc tfoot td { font-weight: 600; border-bottom: 0; padding-top: 0.5rem; }
+  .calc tfoot td.tot { color: var(--pts); font-family: "JetBrains Mono", monospace; }
+  .calc .w { color: var(--pts); }
+  .calc .drop { color: var(--faint); }
+
+  .note {
+    border-left: 2px solid var(--pts); background: var(--surface);
+    padding: 0.9rem 1.1rem; border-radius: 0 5px 5px 0;
+    display: flex; flex-direction: column; gap: 0.5rem;
+  }
+  .note .eyebrow { color: var(--pts); }
+  .note p { font-size: 0.92rem; }
+
+  .rule { border: 0; border-top: 1px solid var(--line); margin: 0; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">fty schema · nba</p>
+    <h1>One grain, two formats</h1>
+    <p class="lede">Category and points leagues disagree about <strong>how a category is scored</strong>, not about what gets recorded. Store the observation once; let the format be a rule applied on the way out.</p>
+  </header>
+
+  <section>
+    <h2>The pipeline</h2>
+    <figure>
+      <div class="figbox">
+        <svg viewBox="0 0 880 566" role="img" aria-label="Two differently shaped ESPN box score responses converge into a single long fact table of raw category values, which two scoring rules — compare-to-opponent for category leagues, multiply-by-weight for points leagues — then read to produce one matchup score column.">
+          <defs>
+            <marker id="ah-ink" class="mk-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ah-cat" class="mk-cat" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ah-pts" class="mk-pts" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- sources -->
+          <rect x="40" y="24" width="380" height="80" rx="5" fill="var(--surface)" stroke="var(--cat)" stroke-width="1.5"/>
+          <text x="56" y="49" font-family="Archivo, sans-serif" font-size="12" font-weight="600" fill="var(--cat)">ESPN H2H_CATEGORY</text>
+          <text x="56" y="70" font-family="JetBrains Mono, monospace" font-size="10.5" fill="var(--ink)">box_score.home_stats</text>
+          <text x="56" y="88" font-size="10.5" fill="var(--muted)">per-category team totals, already aggregated</text>
+
+          <rect x="460" y="24" width="380" height="80" rx="5" fill="var(--surface)" stroke="var(--pts)" stroke-width="1.5"/>
+          <text x="476" y="49" font-family="Archivo, sans-serif" font-size="12" font-weight="600" fill="var(--pts)">ESPN H2H_POINTS</text>
+          <text x="476" y="70" font-family="JetBrains Mono, monospace" font-size="10.5" fill="var(--ink)">box_score.home_score</text>
+          <text x="476" y="88" font-size="10.5" fill="var(--muted)">team total only — no per-category stats exist</text>
+
+          <line x1="230" y1="104" x2="230" y2="170" stroke="var(--cat)" stroke-width="1.5" marker-end="url(#ah-cat)"/>
+          <text x="240" y="142" font-size="10" fill="var(--muted)">read value per category</text>
+
+          <line x1="650" y1="104" x2="650" y2="170" stroke="var(--pts)" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ah-pts)"/>
+          <text x="660" y="136" font-size="10" fill="var(--muted)">sum raw stats over the lineup</text>
+          <text x="660" y="150" font-size="10" fill="var(--pts)">— the part still to build</text>
+
+          <!-- convergence: the fact table -->
+          <rect x="40" y="176" width="800" height="78" rx="5" fill="var(--sunken)" stroke="var(--ink)" stroke-width="2"/>
+          <text x="56" y="201" font-family="JetBrains Mono, monospace" font-size="12" font-weight="600" fill="var(--ink)">fty.matchup_box_score_long</text>
+          <text x="56" y="223" font-family="JetBrains Mono, monospace" font-size="10.5" fill="var(--muted)">season · platform · league_id · matchup · competitor_id · category · value</text>
+          <text x="56" y="243" font-size="10.5" fill="var(--faint)">observations only — identical rows whichever format the league runs</text>
+
+          <!-- split -->
+          <line x1="440" y1="254" x2="440" y2="296" stroke="var(--ink)" stroke-width="1.5"/>
+          <line x1="325" y1="296" x2="555" y2="296" stroke="var(--ink)" stroke-width="1.5"/>
+          <line x1="325" y1="296" x2="325" y2="338" stroke="var(--cat)" stroke-width="1.5" marker-end="url(#ah-cat)"/>
+          <line x1="555" y1="296" x2="555" y2="338" stroke="var(--pts)" stroke-width="1.5" marker-end="url(#ah-pts)"/>
+
+          <!-- reference tables -->
+          <rect x="40" y="342" width="158" height="92" rx="5" fill="var(--surface)" stroke="var(--line)"/>
+          <text x="54" y="372" font-family="JetBrains Mono, monospace" font-size="9.5" fill="var(--muted)">fty.category_label</text>
+          <text x="54" y="392" font-family="JetBrains Mono, monospace" font-size="10" fill="var(--cat)">higher_is_better</text>
+          <text x="54" y="410" font-family="JetBrains Mono, monospace" font-size="10" fill="var(--muted)">agg_type</text>
+          <line x1="198" y1="388" x2="222" y2="388" stroke="var(--cat)" stroke-width="1.5" marker-end="url(#ah-cat)"/>
+
+          <rect x="682" y="342" width="158" height="92" rx="5" fill="var(--surface)" stroke="var(--line)"/>
+          <text x="696" y="372" font-family="JetBrains Mono, monospace" font-size="9.5" fill="var(--muted)">fty.league_categories</text>
+          <text x="696" y="392" font-family="JetBrains Mono, monospace" font-size="10" fill="var(--pts)">points</text>
+          <text x="696" y="410" font-family="JetBrains Mono, monospace" font-size="10" fill="var(--muted)">is_scored</text>
+          <line x1="682" y1="388" x2="658" y2="388" stroke="var(--pts)" stroke-width="1.5" marker-end="url(#ah-pts)"/>
+
+          <!-- the two rules -->
+          <rect x="222" y="342" width="206" height="92" rx="5" fill="var(--cat-wash)" stroke="var(--cat)" stroke-width="1.5"/>
+          <text x="238" y="370" font-family="Archivo, sans-serif" font-size="12" font-weight="600" fill="var(--cat)">Category league</text>
+          <text x="238" y="392" font-size="10.5" fill="var(--ink)">compare value to opponent</text>
+          <text x="238" y="410" font-size="10.5" fill="var(--ink)">→ win / loss / tie, counted</text>
+
+          <rect x="452" y="342" width="206" height="92" rx="5" fill="var(--pts-wash)" stroke="var(--pts)" stroke-width="1.5"/>
+          <text x="468" y="370" font-family="Archivo, sans-serif" font-size="12" font-weight="600" fill="var(--pts)">Points league</text>
+          <text x="468" y="392" font-size="10.5" fill="var(--ink)">multiply value by weight</text>
+          <text x="468" y="410" font-size="10.5" fill="var(--ink)">→ fantasy points, summed</text>
+
+          <!-- converge -->
+          <line x1="325" y1="434" x2="325" y2="458" stroke="var(--cat)" stroke-width="1.5"/>
+          <line x1="555" y1="434" x2="555" y2="458" stroke="var(--pts)" stroke-width="1.5"/>
+          <line x1="325" y1="458" x2="555" y2="458" stroke="var(--ink)" stroke-width="1.5"/>
+          <line x1="440" y1="458" x2="440" y2="482" stroke="var(--ink)" stroke-width="1.5" marker-end="url(#ah-ink)"/>
+
+          <rect x="250" y="486" width="380" height="54" rx="5" fill="var(--sunken)" stroke="var(--ink)" stroke-width="2"/>
+          <text x="266" y="510" font-family="JetBrains Mono, monospace" font-size="11.5" font-weight="600" fill="var(--ink)">fty.matchup_result.score</text>
+          <text x="266" y="529" font-size="10" fill="var(--muted)">categories won  |  point total — one column, either format</text>
+
+          <text x="440" y="558" font-size="10" fill="var(--faint)" text-anchor="middle">standings · leaderboards · everything downstream, with no branch on scoring_type</text>
+        </svg>
+      </div>
+      <figcaption>Two ESPN responses of different shape, one fact table, two scoring rules, one score. <b>The formats diverge only in the middle band</b> — and that band is a join against reference data, not a second pipeline.</figcaption>
+    </figure>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <h2>Why the wide table can't hold this</h2>
+    <p>Each league scores its own subset. The wide table has to carry the union as fixed columns, so most cells are already empty — and a stat outside the union needs an <code>ALTER TABLE</code>.</p>
+    <figure>
+      <div class="figbox">
+        <table class="matrix">
+          <thead>
+            <tr>
+              <th class="rowhead">League</th>
+              <th>pts</th><th>blk</th><th>stl</th><th>ast</th><th>reb</th><th>tov</th><th>fgm</th><th>fga</th><th>ftm</th><th>fta</th><th>fg3_m</th><th>fg_pct</th><th>ft_pct</th><th>dd2</th><th>td3</th>
+              <th class="rowhead"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th class="rowhead"><span class="yr">23-24</span>Let's Get Tropical</th><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td><i></i></td><td><i></i></td><td><i></i></td><td><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td><i></i></td><td><i></i></td><td class="n">9</td></tr>
+            <tr><th class="rowhead"><span class="yr">24-25</span>Tucked</th><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td><i></i></td><td><i></i></td><td class="n">13</td></tr>
+            <tr><th class="rowhead"><span class="yr">24-25</span>Let's Get Tropical <em>(Yahoo)</em></th><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td><i></i></td><td><i></i></td><td><i></i></td><td><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td><i></i></td><td><i></i></td><td class="n">9</td></tr>
+            <tr><th class="rowhead"><span class="yr">25-26</span>Paid In Full</th><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="n">15</td></tr>
+            <tr><th class="rowhead"><span class="yr">25-26</span>Tucked</th><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td><i></i></td><td><i></i></td><td class="n">13</td></tr>
+            <tr><th class="rowhead"><span class="yr">25-26</span>$100 8 Cat</th><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td><i></i></td><td><i></i></td><td class="n">12</td></tr>
+            <tr><th class="rowhead"><span class="yr">25-26</span>Let's Get Tropical</th><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td><i></i></td><td><i></i></td><td class="n">13</td></tr>
+            <tr><th class="rowhead"><span class="yr">26-27</span>Tucked</th><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td><i></i></td><td><i></i></td><td><i></i></td><td><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td><i></i></td><td><i></i></td><td class="n">9</td></tr>
+            <tr class="pts"><th class="rowhead"><span class="yr">26-27</span>National Basketball Cup</th><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td><i></i></td><td><i></i></td><td><i></i></td><td><i></i></td><td class="n">11</td></tr>
+            <tr><th class="rowhead"><span class="yr">26-27</span>Let's Get Tropical</th><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td><i></i></td><td><i></i></td><td><i></i></td><td><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td class="on"><i></i></td><td><i></i></td><td><i></i></td><td class="n">9</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <figcaption>Scored categories per registered league, from <code>fty.league_categories</code>. Only <b>Paid In Full</b> uses all fifteen columns; <code>dd2</code> and <code>td3</code> exist for one league out of ten. The points league (in rust) is the only one that scores <code>fgm</code>/<code>fga</code>/<code>ftm</code>/<code>fta</code> as categories in their own right rather than as percentage components — which is exactly what the hardcoded <code>CASE</code> in <code>fty_categories_vw</code> gets wrong today.</figcaption>
+    </figure>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <h2>What the table became</h2>
+    <div class="cols">
+      <div class="col">
+        <h3>fty.matchup_box_score — today</h3>
+        <ul>
+          <li class="key">season</li><li class="key">platform</li><li class="key">league_id</li><li class="key">competitor_id</li><li class="key">matchup</li>
+          <li>pts</li><li>blk</li><li>stl</li><li>ast</li><li>reb</li><li>tov</li><li>fgm</li><li>fga</li><li>ftm</li><li>fta</li><li>fg3_m</li><li>fg_pct</li><li>ft_pct</li><li>dd2</li><li>td3</li>
+        </ul>
+        <p>Twenty columns, fifteen of them a fixed category vocabulary. Every new scored stat is a migration.</p>
+      </div>
+      <div class="col after">
+        <h3>fty.matchup_box_score_long — after</h3>
+        <ul>
+          <li class="key">season</li><li class="key">platform</li><li class="key">league_id</li><li class="key">matchup</li><li class="key">competitor_id</li><li class="key">category</li>
+          <li>value</li>
+          <li class="gone">fantasy_points</li><li class="gone">result</li>
+        </ul>
+        <p>Six key columns and one value. A new scored stat is a row. Nothing in the shape reveals which format the league runs.</p>
+      </div>
+    </div>
+    <p><code>fantasy_points</code> and <code>result</code> came out because neither is an observation. The weight already lives in <code>fty.league_categories.points</code>, and the league's scoring items carry no <code>pointsOverrides</code> — checked live — so <code>value × points</code> is exact. A category result is a comparison, which doesn't exist until an opponent is in the query.</p>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <h2>The same rows, read two ways</h2>
+    <p>One competitor's category rows for a single matchup. The left reading needs an opponent and a direction; the right reading needs a weight. Neither needs a column of its own.</p>
+    <figure>
+      <div class="figbox">
+        <table class="calc">
+          <thead>
+            <tr>
+              <th>category</th><th>value</th>
+              <th>vs opp.</th><th>cat result</th>
+              <th>weight</th><th>fantasy pts</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>pts</td><td>486</td><td>441</td><td>W</td><td class="w">1</td><td>486</td></tr>
+            <tr><td>reb</td><td>194</td><td>210</td><td>L</td><td class="w">1</td><td>194</td></tr>
+            <tr><td>ast</td><td>118</td><td>102</td><td>W</td><td class="w">2</td><td>236</td></tr>
+            <tr><td>stl</td><td>34</td><td>34</td><td>T</td><td class="w">4</td><td>136</td></tr>
+            <tr><td>blk</td><td>21</td><td>28</td><td>L</td><td class="w">4</td><td>84</td></tr>
+            <tr><td>fg3_m</td><td>63</td><td>57</td><td>W</td><td class="w">1</td><td>63</td></tr>
+            <tr><td>fgm</td><td>187</td><td>174</td><td class="drop">—</td><td class="w">2</td><td>374</td></tr>
+            <tr><td>fga</td><td>402</td><td>389</td><td class="drop">—</td><td class="w">−1</td><td>−402</td></tr>
+            <tr><td>ftm</td><td>49</td><td>36</td><td class="drop">—</td><td class="w">1</td><td>49</td></tr>
+            <tr><td>fta</td><td>61</td><td>48</td><td class="drop">—</td><td class="w">−1</td><td>−61</td></tr>
+            <tr><td>tov</td><td>67</td><td>73</td><td>W</td><td class="w">−2</td><td>−134</td></tr>
+          </tbody>
+          <tfoot>
+            <tr><td>score</td><td></td><td></td><td>4–2–1</td><td></td><td class="tot">1025</td></tr>
+          </tfoot>
+        </table>
+      </div>
+      <figcaption>Weights are the real ones from <b>National Basketball Cup</b> (league 1440301458); the values are illustrative. <code>tov</code> is a win at 67 against 73 because <code>higher_is_better</code> is false for it — the one place the category reading needs reference data that the points reading gets for free from a negative weight. The four shooting components take no category result: <code>is_scored</code> is false for them wherever they only feed <code>fg_pct</code> and <code>ft_pct</code>.</figcaption>
+    </figure>
+  </section>
+
+  <div class="note">
+    <p class="eyebrow">Open</p>
+    <p><code>H2HPointsBoxScore</code> exposes no <code>home_stats</code>, so the points-league branch has to sum raw stats across the lineup itself. Taking <code>BoxPlayer.points_breakdown</code> instead would put already-weighted numbers in <code>value</code> and break the shared meaning of this table — the dashed arrow at the top of the first figure is the piece that decides it.</p>
+  </div>
+
+</div>
