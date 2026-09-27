@@ -27,15 +27,28 @@ BEGIN;
 -- team_roster.player_id is double precision (the table predates the current
 -- writer) and is cast here; that wart is worth fixing at source separately.
 --
--- The player_id guard drops non-NBA participants. NBA's feed assigns temporary
--- ids to opposition players in pre-season exhibitions against international
--- clubs — 280 of them across the history, all confined to Pre Season games, 34
--- of them in 2025-26 ("Oz Blayzer", "Netanel Artzi", "Shi Yuchen"). Dropping
--- Pre Season wholesale would be the tidier rule but costs too much: it also
--- loses 34 real NBA players who appeared in no other game type. The id
--- magnitude separates them cleanly instead — real ids top out at 6,664,001, the
--- temporary block starts at 196,294,083, and the range between the two is
--- entirely empty (nba_api's own player universe maxes at 1,643,141).
+-- The player_id guard is a HEURISTIC with known, measured leakage, and it errs
+-- toward inclusion on purpose. NBA's feed assigns ids to opposition players in
+-- pre-season exhibitions against international clubs, and 280 of those sit in a
+-- block starting at 196,294,083 while real ids top out at 6,664,001 — the range
+-- between is entirely empty, so the threshold is nowhere near real data.
+--
+-- What it does NOT do is separate NBA from non-NBA players in general. Roughly
+-- 600 further pre-season-only participants carry ordinary-looking ids (1, 7020,
+-- 27001-27011, 42824 "Chris Goulding" of Melbourne United) and still get
+-- through. Two tidier rules were tested against the data and are both worse:
+--
+--   * "Pre Season only" → drops 34 real players per season who appeared in no
+--     other game type and never landed on a roster snapshot (Victor Oladipo,
+--     Delon Wright, Frank Kaminsky, Jalen McDaniels in 2025-26 alone).
+--   * "must exist in nba_api's static universe" → drops 46 real players with
+--     real minutes, because that bundled list lags: Jahmai Mashack played 40
+--     regular-season games and 661 minutes in 2025-26 and is absent from it.
+--
+-- So the residue stays. A handful of non-NBA names per season reach util.player
+-- and ctx.active_ids('nba'), where they cost one failed API call each. That is
+-- the cheaper error: excluding a real player loses his stats silently, whereas
+-- including a fake one is visible in a log.
 CREATE VIEW util.player_directory_vw AS
 SELECT s.season, 'nba' AS platform, b.player_id AS source_id, b.player_name AS source_name
 FROM nba.player_box_score b
@@ -82,10 +95,20 @@ ORDER BY d.season, d.platform, d.source_id, d.source_name;
 -- Non-empty means util.conform_player_ids has work to do. This is what replaces
 -- a util.update_schedule row — the daily jobs that write the source tables are
 -- already the detector, so no new scheduled job is needed.
+--
+-- DISTINCT ON collapses this to ONE ROW PER SOURCE ID, preferring the most
+-- recent season's spelling, and that is load bearing rather than cosmetic. One
+-- source id can reach the directory under several names — nba id 1641756 is
+-- "Mike Miles" in the box scores and "Mike Miles Jr." on the roster — and a
+-- matcher reading a per-name grain mints a player for each spelling while only
+-- ever mapping the id once, leaving a stray player owning nothing. Both
+-- statements of conform_player_ids read this view, so both see one name per id.
 CREATE VIEW util.unmatched_player_source_vw AS
-SELECT d.season, d.platform, d.source_id, d.source_name
+SELECT DISTINCT ON (d.platform, d.source_id)
+       d.season, d.platform, d.source_id, d.source_name
 FROM util.player_directory_vw d
 LEFT JOIN util.player_source_id m ON m.platform = d.platform AND m.source_id = d.source_id
-WHERE m.player_key IS NULL;
+WHERE m.player_key IS NULL
+ORDER BY d.platform, d.source_id, d.season DESC, d.source_name;
 
 COMMIT;

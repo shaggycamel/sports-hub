@@ -432,14 +432,26 @@ Two things the view is deliberately **not**:
 
 ## Two source-data problems this surfaced
 
-**Bogus nba player ids.** NBA's feed assigns temporary ids to opposition players
-in pre-season exhibitions against international clubs — 280 across the history,
-all confined to `Pre Season` games, 34 in 2025-26 ("Oz Blayzer", "Netanel Artzi",
-"Shi Yuchen"). Dropping `Pre Season` wholesale is the tidier rule but costs too
-much: it also loses 34 real NBA players who appeared in no other game type
-(union falls 683 → 649). The directory view guards on id magnitude instead —
-real ids top out at 6,664,001, the temporary block starts at 196,294,083, the
-range between is entirely empty, and nba_api's own universe maxes at 1,643,141.
+**Bogus nba player ids.** NBA's feed assigns ids to opposition players in
+pre-season exhibitions against international clubs. 280 of them sit in a block
+starting at 196,294,083 while real ids top out at 6,664,001, and the directory
+view guards on that gap.
+
+**The guard is a heuristic and leaks, deliberately.** About 600 further
+pre-season-only participants carry ordinary-looking ids (1, 7020, 27001-27011,
+42824 "Chris Goulding" of Melbourne United) and get through. Two tidier rules
+were tested against the data; both are worse:
+
+| rule | why it loses |
+|---|---|
+| `Pre Season` only → drop | loses 34 real players per season who appeared in no other game type and never hit a roster snapshot — Victor Oladipo, Delon Wright, Frank Kaminsky, Jalen McDaniels in 2025-26 |
+| must exist in nba_api's static universe | loses 46 real players with real minutes; that bundled list lags, and Jahmai Mashack played 40 regular-season games and 661 minutes in 2025-26 without appearing in it |
+
+So the residue stays and a handful of non-NBA names per season reach
+`ctx.active_ids('nba')`, costing one failed API call each. That is the cheaper
+error: excluding a real player loses his stats silently, while including a fake
+one shows up in a log. Worth noting `get_player_season_stats` has no try/except
+around its per-player call, unlike `get_player_box_score`.
 
 **Names disagree across sources on accents, punctuation and whitespace.** nba's
 "Egor Dëmin" is espn's "Egor Demin"; espn's "P.J. Hairston" is nba's "PJ
@@ -478,13 +490,14 @@ Seeded from the 1158 old rows, then the full history resolved:
 
 | | |
 |---|---|
-| `util.player` | 2738 (1610 `needs_review`) |
+| `util.player` | 2737 (1609 `needs_review`) |
 | `util.player_source_id` | 5070 |
 | normalised name collisions | **0** |
+| players owning no mapping | **0** |
 | unmatched backlog | **0** |
 | 2025-26 coverage | nba 683/683, statyx 703/703, espn 1098/1098 |
 
-`conform_player_ids` run twice in a row resolves 4958 then 0. Spot-checked:
+`conform_player_ids` run twice in a row resolves 2199 then 0. Spot-checked:
 Cameron Payne holds all four platform ids on one key; Egor Dëmin holds **both**
 of ESPN's duplicate ids (5175643, 5243213); the bogus `nba:196294141` for Norris
 Cole is gone.
@@ -492,6 +505,42 @@ Cole is gone.
 The 1610 `needs_review` rows are mostly legitimate — the box scores reach back to
 2009-10, so most are historical players the old crosswalk never held. They are
 flagged, not trusted.
+
+## The backlog view is one row per source id, and that matters
+
+`unmatched_player_source_vw` collapses with `DISTINCT ON (platform, source_id)`,
+preferring the most recent season's spelling. Without it the two statements of
+`conform_player_ids` read different grains: one source id can reach the directory
+under several names — nba id 1641756 is "Mike Miles" in the box scores and "Mike
+Miles Jr." on the roster — so the minting statement created a player per spelling
+while the mapping statement only ever mapped the id once, leaving a player owning
+nothing. Caught by asserting `players owning no mapping = 0`, which is worth
+keeping as a check after any run.
+
+## What name_match is and isn't for
+
+`name_match` is **not** used by `conform_player_ids` and should not be. Run by
+hand over the 181 players that hold no nba id, it returned a "close match" for
+148 of them and most were nonsense — "Aday Mara" → "Cody Martin", "Jayden Nunn"
+→ "Jalen Brunson", "Cameron Boozer" → "Carlos Boozer" (his father). Auto-linking
+on that output is how the original 30 splits happened.
+
+Most of those 181 are not splits at all: statyx's directory carries college and
+draft-prospect players who have no NBA id yet (AJ Dybantsa, Cameron Boozer,
+Braden Smith, Aday Mara).
+
+It did earn its keep on one systematic class — pairs differing only by a
+generational suffix, which `norm_name` does not reconcile:
+
+| | |
+|---|---|
+| merge | Billy Garrett / Billy Garrett Jr. · Boo Buie / Boo Buie III · Joel Berry / Joel Berry II · Kevin Knox / Kevin Knox II · Michael Frazier / Michael Frazier II |
+| **do not merge** | **Jameer Nelson** (nba 2749, 2009-2018) vs **Jameer Nelson Jr.** (statyx, 2025-26) — father and son |
+| unclear | Travis Trice (nba 44839, 2017-18 pre-season) vs Travis Trice II (nba 1626275, 2015-16) — 44839 looks like a non-NBA id that slipped the guard |
+
+Jameer Nelson is exactly why stripping suffixes inside `norm_name` would be
+wrong, and why this stays a human decision applied as an `UPDATE`. The five
+merges are not yet applied.
 
 ## Outstanding
 
