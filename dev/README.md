@@ -480,11 +480,19 @@ non-alpha, IMMUTABLE so it can be indexed), which every match goes through.
 to no single domain and every component reads it through `ctx.active_ids`:
 
 ```python
-hub.util.conform_player_ids()   # this season — the routine call, safe to repeat
-hub.util.backfill_player_ids()  # every season — the one-off seed / post-rebuild repair
+hub.util.conform_player_ids()   # the only call; safe to repeat, ~5s either way
 ```
 
-The split mirrors `FtyComponent.get_matchup_result` / `backfill_matchups`.
+**One method, no season argument, and that is a measured decision rather than a
+simplification.** An earlier version split it into a cur_season call and a
+`backfill_player_ids()` for all seasons, on the assumption that scoping was
+cheaper. It is not: both forms take ~5s, because the time goes on scanning the
+box scores through `player_directory_vw`, not on the work. And scoping is
+actively harmful — it permanently strands any id whose most recent directory
+season is not the current one, which is what happens at every season rollover to
+an id seen late in the old season and not yet resolved. Verified with yahoo 5642
+(last seen 2024-25): unmapped, the scoped call resolved 0 and left it in the
+backlog, where it would have sat forever. The unscoped call resolves it in 5.0s.
 
 
 `hub.util.conform_player_ids()` — two SQL statements, no staging
@@ -522,7 +530,7 @@ Seeded from the 1158 old rows, then the full history resolved:
 | unmatched backlog | **0** |
 | 2025-26 coverage | nba 683/683, statyx 703/703, espn 1098/1098 |
 
-`backfill_player_ids()` run twice in a row resolves 2199 then 0. Spot-checked:
+`conform_player_ids()` run twice in a row resolves 2199 then 0. Spot-checked:
 Cameron Payne holds all four platform ids on one key; Egor Dëmin holds **both**
 of ESPN's duplicate ids (5175643, 5243213); the bogus `nba:196294141` for Norris
 Cole is gone.
@@ -577,8 +585,14 @@ merges are not yet applied.
   that logs and skips a platform whose directory comes back empty.
 - **`nba.team_roster.player_id` is `double precision`**, cast to bigint in the
   directory view. Worth fixing at source.
-- **Dropping `util.conformed_player_id`** waits on the five dashboard views being
-  refabricated against the new shape.
+- **`util.conformed_player_id` has been renamed `conformed_player_id_RETIRED`**
+  and the seed reads it under that name, quoted, since Postgres folds unquoted
+  identifiers to lower case. **Do not drop it.** It holds espn/yahoo ids the live
+  directory never reports — ids for players outside the seasons fty has data for
+  — so `player_source_id` is *not* fully reconstructible from
+  `player_directory_vw` alone. Found the hard way: deleting every espn mapping
+  and re-resolving lost 23 of them and minted 21 spurious players. A rebuild
+  must run the seed, not just `conform_player_ids()`.
 - `utility.deduplicate_tables` is still dead code: it takes a `db_con` with
   `.db_con` and `.cur_season`, attributes from the pre-split god-object.
 

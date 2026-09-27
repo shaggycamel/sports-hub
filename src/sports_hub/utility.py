@@ -156,29 +156,23 @@ class UtilComponent:
 
     def conform_player_ids(self) -> None:
         """
-        Resolve the current season's identity backlog — the routine call.
+        Give every source id in util.unmatched_player_source_vw a util.player to
+        belong to. Covers every season in the backlog, deliberately.
 
         Safe to run unconditionally and as often as you like: it is a no-op when
-        util.unmatched_player_source_vw is empty. Run it after the jobs that
-        write the source tables, since those are what put new ids in the
-        directory in the first place.
-        """
-        self._conform(self.ctx.cur_season)
+        the backlog is empty, and costs about five seconds either way — the time
+        goes on scanning the box scores through util.player_directory_vw, not on
+        the work. Run it after the jobs that write the source tables, since those
+        are what put new ids in the directory in the first place.
 
-    def backfill_player_ids(self) -> None:
-        """
-        Resolve every season in the backlog rather than only the current one.
-
-        The one-off for seeding history, and the repair after the identity tables
-        have been rebuilt. Named to match FtyComponent.backfill_matchups, which
-        stands in the same relation to get_matchup_result.
-        """
-        self._conform(None)
-
-    def _conform(self, season: str | None) -> None:
-        """
-        Give every source id in util.unmatched_player_source_vw a util.player to
-        belong to. season=None covers every season in the backlog.
+        It deliberately does NOT take a season. An earlier version defaulted to
+        ctx.cur_season, which measured worse than useless: scoping saved nothing
+        (same five seconds) and permanently stranded any id whose most recent
+        directory season was not the current one. That is not hypothetical — it
+        is what happens at every season rollover to an id seen late in the old
+        season and not yet resolved. Verified: with yahoo 5642 (last seen
+        2024-25) unmapped, a cur_season-scoped run resolved 0 and left it in the
+        backlog, where it would have sat forever.
 
         Two statements, no staging table and no upsert. The first mints a player
         for any unmatched name nobody owns yet; the second attaches every
@@ -201,8 +195,6 @@ class UtilComponent:
         guessed at, so genuine namesakes surface as a backlog entry for a human
         instead of being silently merged.
         """
-        scope = "" if season is None else f" AND u.season = '{season}'"
-
         before = self.db.read(
             "SELECT count(*) AS n FROM util.unmatched_player_source_vw"
         ).item()
@@ -215,8 +207,7 @@ class UtilComponent:
             "INSERT INTO util.player (conformed_name, needs_review) "
             "SELECT min(u.source_name), true "
             "FROM util.unmatched_player_source_vw u "
-            "WHERE u.source_name IS NOT NULL"
-            f"{scope} "
+            "WHERE u.source_name IS NOT NULL "
             "  AND NOT EXISTS (SELECT 1 FROM util.player p "
             "                  WHERE util.norm_name(p.conformed_name) "
             "                        = util.norm_name(u.source_name)) "
@@ -232,7 +223,6 @@ class UtilComponent:
             "WHERE (SELECT count(*) FROM util.player p2 "
             "       WHERE util.norm_name(p2.conformed_name) "
             "             = util.norm_name(u.source_name)) = 1"
-            f"{scope}"
         )
 
         after = self.db.read(

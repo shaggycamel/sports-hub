@@ -16,6 +16,13 @@
 --
 -- Platform vocabulary is lowercase throughout util.* ('nba', 'espn', 'statyx').
 -- fty.* stores 'ESPN'/'Yahoo', so reads of those tables lower() it.
+--
+-- The seed reads util.conformed_player_id_RETIRED — the old table, renamed per
+-- this schema's _RETIRED convention once the new shape was adopted. The name is
+-- quoted because Postgres folds unquoted identifiers to lower case. It is still
+-- needed: it holds espn/yahoo ids the live directory never reports (ids for
+-- players outside the seasons fty has data for), so player_source_id is NOT
+-- fully reconstructible from util.player_directory_vw alone. Do not drop it.
 
 BEGIN;
 
@@ -71,7 +78,7 @@ CREATE INDEX player_source_id_player_key_ix ON util.player_source_id (player_key
 -- spelling where variants exist; a human can correct it via needs_review.
 INSERT INTO util.player (conformed_name)
 SELECT min(conformed_name)
-FROM util.conformed_player_id
+FROM util."conformed_player_id_RETIRED"
 WHERE conformed_name IS NOT NULL
 GROUP BY util.norm_name(conformed_name);
 
@@ -81,7 +88,7 @@ GROUP BY util.norm_name(conformed_name);
 -- so no row is at risk of colliding on the new primary key.
 INSERT INTO util.player_source_id (platform, source_id, source_name, player_key)
 SELECT src.platform, src.source_id, src.source_name, p.player_key
-FROM util.conformed_player_id c
+FROM util."conformed_player_id_RETIRED" c
 JOIN util.player p
   ON util.norm_name(p.conformed_name) = util.norm_name(c.conformed_name)
 CROSS JOIN LATERAL (

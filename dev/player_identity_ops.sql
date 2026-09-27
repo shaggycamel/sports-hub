@@ -88,7 +88,14 @@ ON CONFLICT (platform, source_id) DO UPDATE
     SET player_key  = EXCLUDED.player_key,
         source_name = EXCLUDED.source_name;
 
--- 8. ADD A PLATFORM. No DDL — the mapping table is already long. Add a UNION arm
+-- 8. REBUILD FROM SCRATCH. Run dev/build_player_identity.sql (which re-seeds
+-- from util."conformed_player_id_RETIRED"), then the views file, then
+-- hub.util.conform_player_ids(). Do NOT try to rebuild from the directory alone:
+-- the retired table holds espn/yahoo ids the directory never reports, and player_
+-- key is an identity column so every key is renumbered by a rebuild.
+-- Expected afterwards: 2737 players, 5070 mappings, 0 orphans, 0 backlog.
+
+-- 9. ADD A PLATFORM. No DDL — the mapping table is already long. Add a UNION arm
 -- to util.player_directory_vw returning (season, platform, source_id,
 -- source_name) and resolve. Nothing else changes: ctx.active_ids('<platform>')
 -- works immediately, and nothing needs a new column.
