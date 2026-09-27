@@ -359,9 +359,162 @@ There is one genuinely new view worth surfacing in the dashboard —
 carrying the value, the weight and the direction. It is the natural source for a
 per-category matchup breakdown in either league format.
 
+# Player identity (util.player / util.player_source_id)
+
+Replaces the wide, name-keyed `util.conformed_player_id`. **Built and verified
+against local Postgres; the old table is left in place untouched** so the five
+un-ported dashboard views keep working until they are refabricated.
+
+## Why
+
+`conformed_player_id` held one column pair per platform (`{source}_id`,
+`{source}_name`) with no primary key, no unique constraint and no index. A new
+source could only arrive by matching a name, and a missed match was appended as a
+new player: 1158 rows held 1128 distinct names, and **all 30 duplicates were one
+player split in two** — a nba/espn/yahoo row plus a statyx-only row with a null
+`nba_id` (Cameron Payne, Markelle Fultz, Seth Curry, Dalano Banton, …). Nothing
+about the shape could detect it, because there was no key to conflict on.
+
+`is_active` was worse: a stored boolean **no code in this repo ever wrote**, with
+no `util.update_schedule` row. It had drifted to 124 players with a 2025-26
+roster row not flagged, 29 with no crosswalk row at all, and 38 flagged active
+sitting on no roster.
+
+## Shape
+
+```
+util.player            player_key PK, conformed_name, needs_review
+util.player_source_id  platform, source_id, source_name, player_key
+                       PK (platform, source_id)
+```
+
+Keying the mapping on `(platform, source_id)` makes the split inexpressible, and
+makes the build idempotent by virtue of the key rather than the matcher being
+right. `conformed_name` is deliberately **not** unique — genuine namesakes exist,
+and the matcher declines to guess rather than the constraint forbidding them.
+
+Platform vocabulary is lowercase in `util.*` (`nba`, `espn`, `statyx`, `yahoo`);
+`fty.*` stores `ESPN`/`Yahoo`, so reads of those tables `lower()` it.
+
+## Activity is derived, not stored
+
+Neither table has an `is_active` column. `util.active_player_vw` derives it per
+season from tables the daily jobs already refresh, so it cannot go stale:
+
+| platform | source |
+|---|---|
+| nba | `nba.player_box_score` ∪ `nba.team_roster` |
+| statyx | `statyx.player_info` |
+| espn | `fty.free_agents` ∪ `fty.competitor_roster`, current season only |
+
+The nba union matters. `team_roster` is a **sampled snapshot** — it records who
+the job saw when it ran, so a 10-day contract signed and expired between runs
+never appears. `player_box_score` is a **complete event log**: nobody plays
+without landing in one. For 2025-26 the box scores hold 710 players against the
+roster's 645, and 72 of the 710 have no roster row at all. The roster still earns
+its place, because early in a season the event log is nearly empty.
+
+`ctx.active_ids(platform, season=None)` reads the view, cached per
+(platform, season). It replaces `ctx.active_players`, and 12 call sites lost
+their `.drop_nulls()` compensation with it.
+
+Two things the view is deliberately **not**:
+
+- It is not "currently on an NBA roster". `team_roster` cannot answer that:
+  spells only close on a **trade**, never when a player is cut or leaves the
+  league, so 2024-25 finished with 583 of 686 rows still open months later.
+  `exit_date IS NULL` means "latest team assignment". Answering the real question
+  needs a change to `get_team_roster` — close any open spell whose player is
+  absent from the fresh snapshot — and nothing needs it yet.
+- It is not restricted to resolved players. The join to `player_source_id` is a
+  LEFT join, so an unmapped source id still drives a fetch loop and a mid-season
+  arrival is fetched on the first run that sees them.
+
+## Two source-data problems this surfaced
+
+**Bogus nba player ids.** NBA's feed assigns temporary ids to opposition players
+in pre-season exhibitions against international clubs — 280 across the history,
+all confined to `Pre Season` games, 34 in 2025-26 ("Oz Blayzer", "Netanel Artzi",
+"Shi Yuchen"). Dropping `Pre Season` wholesale is the tidier rule but costs too
+much: it also loses 34 real NBA players who appeared in no other game type
+(union falls 683 → 649). The directory view guards on id magnitude instead —
+real ids top out at 6,664,001, the temporary block starts at 196,294,083, the
+range between is entirely empty, and nba_api's own universe maxes at 1,643,141.
+
+**Names disagree across sources on accents, punctuation and whitespace.** nba's
+"Egor Dëmin" is espn's "Egor Demin"; espn's "P.J. Hairston" is nba's "PJ
+Hairston"; `nba.team_roster` carries "Norris  Cole" with a double space. Matching
+raw strings recreated the split it was meant to end — a first pass produced 20
+duplicated players. Hence `util.norm_name()` (casefold, strip accents, strip
+non-alpha, IMMUTABLE so it can be indexed), which every match goes through.
+
+## The matcher
+
+`utility.conform_player_ids(db, season=None)` — two SQL statements, no staging
+table and no upsert. The first mints a player for any unmatched normalised name
+nobody owns; the second attaches every unmatched source id to the player holding
+that name. Re-running is a no-op because the second statement's output is exactly
+what empties the view the first reads.
+
+Matching is normalised-exact, **never fuzzy** — fuzzy auto-linking is what caused
+the original 30 splits. A name matching more than one player is left unmatched
+rather than guessed at. Genuine platform renames ("Bub Carrington" → "Carlton
+Carrington") stay in the backlog for `name_match()` and a human.
+
+## Cadence: no update_schedule row
+
+`util.update_schedule` has no cadence column and the runner drives everything
+daily (`util.update_log` shows `fty.free_agents` on 460 distinct days), so a row
+would mean daily — far more than this needs. Only 24 players first appeared after
+the 2025-26 pre-season seed.
+
+Instead `util.unmatched_player_source_vw` is the backlog, and the daily jobs that
+write the source tables are already the detector. Non-empty means run
+`conform_player_ids`. Run it at season start; check the view otherwise.
+
+## Verified state
+
+Seeded from the 1158 old rows, then the full history resolved:
+
+| | |
+|---|---|
+| `util.player` | 2738 (1610 `needs_review`) |
+| `util.player_source_id` | 5070 |
+| normalised name collisions | **0** |
+| unmatched backlog | **0** |
+| 2025-26 coverage | nba 683/683, statyx 703/703, espn 1098/1098 |
+
+`conform_player_ids` run twice in a row resolves 4958 then 0. Spot-checked:
+Cameron Payne holds all four platform ids on one key; Egor Dëmin holds **both**
+of ESPN's duplicate ids (5175643, 5243213); the bogus `nba:196294141` for Norris
+Cole is gone.
+
+The 1610 `needs_review` rows are mostly legitimate — the box scores reach back to
+2009-10, so most are historical players the old crosswalk never held. They are
+flagged, not trusted.
+
+## Outstanding
+
+- **`ctx.cur_season` is hardcoded** to `"2025-26"` at `context.py:21` with the
+  `nba_parameters` lines commented out, while three ESPN leagues are already
+  registered for 2026-27 (with no rows fetched yet). Everything above is
+  season-scoped, so this gates it. If the hardcode is flipped before those
+  leagues are fetched, the espn directory goes from 1098 ids to 0 — worth a guard
+  that logs and skips a platform whose directory comes back empty.
+- **`nba.team_roster.player_id` is `double precision`**, cast to bigint in the
+  directory view. Worth fixing at source.
+- **Dropping `util.conformed_player_id`** waits on the five dashboard views being
+  refabricated against the new shape.
+- `utility.deduplicate_tables` is still dead code: it takes a `db_con` with
+  `.db_con` and `.cur_season`, attributes from the pre-split god-object.
+
 ## Files
 
 - `build_fty_dev.sql` — the schema, idempotent
+- `build_player_identity.sql` — `util.norm_name`, the two identity tables, and
+  the seed from `util.conformed_player_id`. **Not idempotent** — it creates the
+  tables; drop them first to re-run
+- `build_player_identity_views.sql` — the directory, activity and backlog views
 - `one-grain-two-formats.html` — source for the design diagram
 - `superseded/` — earlier drafts, kept for history. **Do not run them:** both
   target `fty` rather than `fty_dev`, and predate the pct, `is_scored` and

@@ -25,7 +25,7 @@ class NBAComponent:
 
     def get_player_season_stats(self):
         """Season stats (totals)"""
-        ls_pl = self.ctx.active_players["nba_id"].drop_nulls().to_list()
+        ls_pl = self.ctx.active_ids("nba")
 
         logger.info("nba.player_season_stats")
         dfs = []
@@ -49,7 +49,7 @@ class NBAComponent:
         self.db.write_ordered(df, "player_season_stats", schema="nba")
 
     def get_player_info(self):
-        ls_pl = self.ctx.active_players["nba_id"].drop_nulls().to_list()
+        ls_pl = self.ctx.active_ids("nba")
 
         logger.info("nba.player_info")
         dfs = []
@@ -102,7 +102,8 @@ class NBAComponent:
         )
 
         player_ids = self.db.read(
-            "SELECT nba_name, nba_id FROM util.conformed_player_id"
+            "SELECT source_name AS nba_name, source_id AS nba_id "
+            "FROM util.player_source_id WHERE platform = 'nba'"
         ).with_columns(
             pl.col("nba_name").str.normalize("NFKD").str.replace_all("[^\\x00-\\x7F]", "")
         )

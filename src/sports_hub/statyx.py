@@ -197,7 +197,7 @@ class StatyxComponent:
     def get_game_stats(self, season: str | None = None, **params):
         """Player per-game stats via the Statyx API."""
         season = season or self.ctx.cur_season
-        ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
+        ls_pl = self.ctx.active_ids("statyx")
 
         logger.info("statyx.game_stats")
         df = self.pipeline.run(
@@ -224,7 +224,7 @@ class StatyxComponent:
     def get_advanced_stats(self, season: str | None = None, **params):
         """Advanced per-game stats via the Statyx API."""
         season = season or self.ctx.cur_season
-        ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
+        ls_pl = self.ctx.active_ids("statyx")
 
         logger.info("statyx.advanced_stats")
         df = self.pipeline.run(
@@ -281,7 +281,7 @@ class StatyxComponent:
     def get_play_types(self, season: str | None = None, **params):
         """Player play types via the Statyx API."""
         season = season or self.ctx.cur_season
-        ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
+        ls_pl = self.ctx.active_ids("statyx")
 
         logger.info("statyx.play_types")
         df = self.pipeline.run("play_types", params={"season": season, **params}, keys=ls_pl)
@@ -303,7 +303,7 @@ class StatyxComponent:
     def get_shot_zones(self, season: str | None = None, **params):
         """Player shot-zones via the Statyx API."""
         season = season or self.ctx.cur_season
-        ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
+        ls_pl = self.ctx.active_ids("statyx")
 
         logger.info("statyx.shot_zones")
         df = self.pipeline.run("shot_zones", params={"season": int(season[:4]), **params}, keys=ls_pl)
@@ -326,7 +326,7 @@ class StatyxComponent:
     def get_potential_assists(self, season: str | None = None, **params):
         """Player potential assists via the Statyx API."""
         season = season or self.ctx.cur_season
-        ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
+        ls_pl = self.ctx.active_ids("statyx")
 
         logger.info("statyx.potential_assists")
         df = self.pipeline.run(
@@ -353,7 +353,7 @@ class StatyxComponent:
     def get_shooting_splits(self, season: str | None = None, **params):
         """Player shooting splits via the Statyx API."""
         season = season or self.ctx.cur_season
-        ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
+        ls_pl = self.ctx.active_ids("statyx")
 
         logger.info("statyx.shooting_splits")
         df = self.pipeline.run("shooting_splits", params={"season": int(season[:4]), **params}, keys=ls_pl)
@@ -376,7 +376,7 @@ class StatyxComponent:
     def get_drives(self, season: str | None = None, **params):
         """Player drives via the Statyx API."""
         season = season or self.ctx.cur_season
-        ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
+        ls_pl = self.ctx.active_ids("statyx")
 
         logger.info("statyx.drives")
         df = self.pipeline.run("drives", params={"season": int(season[:4]), **params}, keys=ls_pl)
@@ -399,7 +399,7 @@ class StatyxComponent:
     def get_scoring_breakdown(self, season: str | None = None, **params):
         """Player scoring breakdown via the Statyx API."""
         season = season or self.ctx.cur_season
-        ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
+        ls_pl = self.ctx.active_ids("statyx")
 
         logger.info("statyx.scoring_breakdown")
         df = self.pipeline.run("scoring_breakdown", params={"season": int(season[:4]), **params}, keys=ls_pl)
@@ -422,7 +422,7 @@ class StatyxComponent:
     def get_assist_profile(self, season: str | None = None, **params):
         """Player assist profile via the Statyx API."""
         season = season or self.ctx.cur_season
-        ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
+        ls_pl = self.ctx.active_ids("statyx")
 
         logger.info("statyx.assist_profile")
         df = self.pipeline.run("assist_profile", params={"season": int(season[:4]), **params}, keys=ls_pl)
@@ -445,7 +445,7 @@ class StatyxComponent:
     def get_matchup_history(self, season: str | None = None, **params):
         """Player matchup history via the Statyx API."""
         season = season or self.ctx.cur_season
-        ls_pl = self.ctx.active_players["statyx_id"].drop_nulls().to_list()
+        ls_pl = self.ctx.active_ids("statyx")
 
         logger.info("statyx.matchup_history")
         df = self.pipeline.run("matchup_history", params={"season": season, **params}, keys=ls_pl)
