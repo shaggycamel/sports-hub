@@ -52,7 +52,7 @@ and scoring definitions but nothing computed:
 | `result` (W/L/T) | a comparison — needs an opponent, so it belongs in a query |
 | `fg_pct`, `ft_pct` | `fgm/fga`, `ftm/fta`; ESPN's own value matches to 5e-9 |
 | `is_scored` | redundant once the padding rows were removed — row presence says it |
-| `nba_category` | lookup from `category_label.fty_category` |
+| `nba_category` | lookup through `platform_category` (see below) |
 
 Dropping the ratio rows is what makes the rest work: **every stored value is
 additive**, so any window is `SUM(value)` with no per-category special case.
@@ -61,6 +61,40 @@ Averaging matchup percentages instead was off by up to 32 basis points.
 `H2H_MOST_CATEGORIES` is treated as a category league. It maps through
 `fty_dev.scoring_format` rather than by rewriting `league.scoring_type`, so that
 column stays faithful to ESPN and other platforms become rows, not branches.
+
+## Conforming platform vocabularies
+
+Two things a platform names in its own way, and one mapping table each. Adding a
+platform means inserting rows; no schema change and no code branch.
+
+| platform says | table | conforms to |
+|---|---|---|
+| `H2H_CATEGORY`, `H2H_POINTS`, … | `scoring_format` | `category` / `points` |
+| `PTS`, `3PM`, `FG%`, … | `platform_category` | `nba_category` |
+
+`category_label` was doing both jobs with one `fty_category` column — ESPN's
+abbreviation *and* the join key for `league_categories.category` — which
+silently assumed every platform spells a category the same way. It happens to
+hold for Yahoo's nine, but only by luck. So:
+
+- **`category_label`** is now the conformed, platform-neutral vocabulary:
+  `nba_category` (PK), `fmt_category`, `display_order`, `higher_is_better`,
+  `numerator`, `denominator`.
+- **`platform_category`** is `(platform, platform_category) → nba_category`,
+  unique both ways, with an FK onto the vocabulary.
+
+`league_categories.category` stays the platform's own label, as fetched, and
+conforms on read. `fty_categories_vw` joins through the map with an inner join,
+so an unmapped label drops a row rather than silently propagating a
+platform-native name — check `league_categories` row count against the view
+after adding a platform.
+
+ESPN's vocabulary is the standard, and it is complete: across every league with
+box scores, `scoreByStat` returns nothing outside the 15 labels in the map.
+
+Left for later: if a second **sport** is added, the vocabulary needs a sport
+dimension (`nba_category` is NBA-specific by name and content) and
+`platform_category` becomes `(sport, platform, platform_category)`. Not built.
 
 ## Reference-data repairs
 
@@ -77,8 +111,8 @@ The build applies four fixes, all sourced from ESPN rather than inferred:
 - **`scoring_type` corrected** on 2023-24 Let's Get Tropical and 2025-26 Paid In
   Full — both are `H2H_MOST_CATEGORIES`, stored as `H2H_CATEGORY`.
 - **Keys added** that `fty` never had: PKs on `category_label`,
-  `league_categories`, `matchup_box_score` and `matchup_result`, plus a partial
-  unique index on `category_label.fty_category`.
+  `platform_category`, `league_categories`, `matchup_box_score` and
+  `matchup_result`, plus the FK from `platform_category` onto the vocabulary.
 
 All ten league-seasons now match ESPN's live `scoringItems` exactly.
 

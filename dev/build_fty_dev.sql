@@ -61,13 +61,31 @@ UPDATE fty_dev.category_label SET numerator = 'fgm',   denominator = 'fga'   WHE
 UPDATE fty_dev.category_label SET numerator = 'ftm',   denominator = 'fta'   WHERE nba_category = 'ft_pct';
 UPDATE fty_dev.category_label SET numerator = 'fg3_m', denominator = 'fg3_a' WHERE nba_category = 'fg3_pct';
 
--- No nba_category on league_categories: it is a pure lookup from
--- category_label.fty_category, which every view already joins. Rather than
--- store the derivation, constrain the key it depends on — a unique index makes
--- the join provably single-valued, which the copied column only assumed.
+-- Split the vocabulary from the platform aliases. category_label held one
+-- fty_category column doing two jobs: ESPN's abbreviation AND the join key for
+-- league_categories.category, which silently assumed every platform spells a
+-- category the same way. platform_category makes the alias per-platform, so a
+-- new platform is rows rather than a schema change — the same seam as
+-- scoring_format, for the same reason.
+CREATE TABLE fty_dev.platform_category (
+  platform          text NOT NULL,
+  platform_category text NOT NULL,       -- the platform's own abbreviation
+  nba_category      text NOT NULL,
+  PRIMARY KEY (platform, platform_category),
+  UNIQUE (platform, nba_category)        -- one label per category, both ways
+);
+
+-- Seed ESPN from the labels category_label already carried.
+INSERT INTO fty_dev.platform_category (platform, platform_category, nba_category)
+SELECT 'ESPN', fty_category, nba_category
+FROM fty_dev.category_label
+WHERE fty_category IS NOT NULL;
+
+-- category_label is now platform-neutral: the conformed vocabulary only.
+ALTER TABLE fty_dev.category_label DROP COLUMN fty_category;
 ALTER TABLE fty_dev.category_label ADD PRIMARY KEY (nba_category);
-CREATE UNIQUE INDEX category_label_fty_category_uq
-  ON fty_dev.category_label (fty_category) WHERE fty_category IS NOT NULL;
+ALTER TABLE fty_dev.platform_category
+  ADD FOREIGN KEY (nba_category) REFERENCES fty_dev.category_label (nba_category);
 ALTER TABLE fty_dev.league_categories
   ADD PRIMARY KEY (season, platform, league_id, category);
 
@@ -145,12 +163,14 @@ INSERT INTO fty_dev.scoring_format (platform, scoring_type, scoring_format) VALU
 -- comparison needs. Row presence replaces the old hardcoded CASE.
 CREATE VIEW fty_dev.fty_categories_vw AS
 SELECT lc.season, lc.platform, lc.league_id,
-       lc.category AS fty_category, cl.nba_category, cl.fmt_category, cl.display_order,
+       lc.category AS platform_category, cl.nba_category, cl.fmt_category, cl.display_order,
        lc.points, cl.higher_is_better, cl.numerator, cl.denominator,
        (cl.numerator IS NOT NULL) AS is_ratio,
        lg.scoring_type, sf.scoring_format
 FROM fty_dev.league_categories lc
-JOIN fty_dev.category_label cl ON cl.fty_category = lc.category
+JOIN fty_dev.platform_category pc
+  ON pc.platform = lc.platform AND pc.platform_category = lc.category
+JOIN fty_dev.category_label cl ON cl.nba_category = pc.nba_category
 LEFT JOIN fty_dev.league lg
   ON lg.season = lc.season AND lg.platform = lc.platform AND lg.league_id = lc.league_id
 LEFT JOIN fty_dev.scoring_format sf
