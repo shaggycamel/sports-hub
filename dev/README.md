@@ -58,6 +58,25 @@ Dropping the ratio rows is what makes the rest work: **every stored value is
 additive**, so any window is `SUM(value)` with no per-category special case.
 Averaging matchup percentages instead was off by up to 32 basis points.
 
+That rule is about redundancy **within a grain** — a computed value sitting in
+the same row as the facts it derives from. It is not an argument against
+aggregates: `matchup_result` is a separate relation at the matchup grain with its
+own key, so it stays a table even though its contents are reproducible from the
+category grain. Storing a summary of a finer grain is not the same thing as
+denormalising a column into the fact table beside its own inputs.
+
+The reproducibility is still useful, as a check rather than a reason to drop it.
+Deriving `cat_won/lost/tied` from `matchup_box_score` — comparing each scored
+category against the opponent from `league_matchup`, directed by
+`higher_is_better` — reproduces ESPN's `cumulativeScore` exactly: all ten
+competitors of 2025-26 Let's Get Tropical matchup 20, all three counts. ESPN's
+`ineligible` flag is never set (0 across 5,574 scored category-sides over three
+leagues), and the only scored categories missing a `result` are the single
+in-progress matchup per league. So that derivation is a safe regression test, and
+it is the one worth running against a points league once its season starts: the
+first matchup where summed lineup totals fail to reproduce ESPN's own
+`home_score` is a bug in the lineup aggregation, not a tie to break.
+
 `H2H_MOST_CATEGORIES` is treated as a category league. It maps through
 `fty_dev.scoring_format` rather than by rewriting `league.scoring_type`, so that
 column stays faithful to ESPN and other platforms become rows, not branches.
