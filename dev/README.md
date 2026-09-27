@@ -309,17 +309,55 @@ Yahoo's handler was left alone beyond the schema threading; it is out of scope.
 
 - `league`, `league_categories`, `league_competitor` and `league_matchup_dates`
   need no `update_schedule` rows: they are derived once at the start of a season.
-- **Five views were never ported:** `fty_base_vw`, `fty_free_agents_vw`,
-  `fty_league_schedule_vw`, `fty_recent_activity_vw`,
-  `fty_team_roster_schedule_vw`. Each needs checking against the new shapes
-  before being copied across; `fty_league_schedule_vw` in particular reads
-  `league_matchup`, and any of them may touch a column that moved.
+- **Five views were never ported**, and belong to the nba.shiny dashboard rather
+  than here: `fty_base_vw`, `fty_free_agents_vw`, `fty_league_schedule_vw`,
+  `fty_recent_activity_vw`, `fty_team_roster_schedule_vw`. None of them touch
+  anything that changed — between them they read only `league`,
+  `league_competitor`, `free_agents`, `league_matchup`, `league_matchup_dates`,
+  `competitor_roster` and `util.conformed_player_id`, all identical in `fty_dev`.
+  They port verbatim. See the contract note below for what the dashboard does
+  need to know.
 - **`util.table_column_order` needs nothing**, but worth knowing why: only
   `fty.competitor_roster` is registered, and `get_competitor_roster` is the sole
   method using `write_ordered`. Everything else calls `db.write`, which never
   consults the registration, and `conform()` passes an unregistered table through
   untouched. Both new writers build frames from an explicit `pl.DataFrame` schema,
   so their column order is already deterministic.
+
+## Contract changes for the nba.shiny dashboard
+
+The five dashboard views port across unchanged. Three things do affect the
+dashboard, and are worth reading before the schemas swap.
+
+**`fty_categories_vw` changed shape.** Six of eight columns are unchanged;
+two are gone:
+
+| gone | replacement |
+|---|---|
+| `h2h_cat` | row presence — after the reference-data repair, `league_categories` holds exactly ESPN's scoring items, so a row existing *is* the flag |
+| `fty_category` | renamed `platform_category`, since the label is now per-platform |
+
+Added: `points`, `higher_is_better`, `numerator`, `denominator`, `is_ratio`,
+`scoring_type`, `scoring_format`. A consumer filtering on `h2h_cat = true` should
+just drop the filter.
+
+**`fty_matchup_box_score_vw` keeps all 22 columns** and needs no query changes.
+One behavioural difference: `fg_pct` and `ft_pct` are now derived from their
+components and come back as `0` rather than `NULL` when there were no attempts,
+matching what ESPN itself reports. Anything special-casing a null percentage can
+stop.
+
+**Yahoo is absent.** `fty` carries one Yahoo league-season; `fty_dev` carries
+ESPN only. Any view that showed Yahoo leagues will show fewer rows. That was
+deliberate, but it is a visible change to the dashboard rather than an internal
+one.
+
+Also gone: `league_schedule_RETIRED`.
+
+There is one genuinely new view worth surfacing in the dashboard —
+`matchup_category_vw`, one row per competitor per matchup per scored category,
+carrying the value, the weight and the direction. It is the natural source for a
+per-category matchup breakdown in either league format.
 
 ## Files
 
