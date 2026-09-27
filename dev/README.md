@@ -448,10 +448,24 @@ were tested against the data; both are worse:
 | must exist in nba_api's static universe | loses 46 real players with real minutes; that bundled list lags, and Jahmai Mashack played 40 regular-season games and 661 minutes in 2025-26 without appearing in it |
 
 So the residue stays and a handful of non-NBA names per season reach
-`ctx.active_ids('nba')`, costing one failed API call each. That is the cheaper
-error: excluding a real player loses his stats silently, while including a fake
-one shows up in a log. Worth noting `get_player_season_stats` has no try/except
-around its per-player call, unlike `get_player_box_score`.
+`ctx.active_ids('nba')`. That is the cheaper error: excluding a real player loses
+his stats silently, while including a fake one is visible in a log.
+
+**Both nba per-player loops are now guarded for it**, and the failure modes were
+not what a try/except catches. Measured against the live API with id 42824
+("Chris Goulding", Melbourne United):
+
+| method | what a non-NBA id actually does | guard |
+|---|---|---|
+| `get_player_season_stats` | returns a **0-row** frame, no exception; pandas types every column of it as object, so `PLAYER_ID` arrives String against a real player's Int64 and `pl.concat` raises `SchemaError`, losing the whole run | skip empty frames, log them at INFO as "not NBA players"; plus try/except → `continue` for genuine API errors, and skip the write when nothing was fetched |
+| `get_player_info` | returns a **1-row** frame 33 wide — `CommonPlayerInfo` omits `SUPPLEMENTAL_STATUS` for some ids, so a plain concat raises `ShapeError`; then `height` is `""`, which splits to `[""]` and a strict Float64 cast raises | `concat(how="diagonal_relaxed")` as `get_game_schedule` already does, and `strict=False` / `null_on_oob=True` on the height casts, matching how `weight` was already handled |
+
+`get_player_season_stats` keeps a strict concat — its frames are a consistent 27
+wide, and the empty-frame guard is what that loop needs.
+
+Note `get_player_info` does still write a row for such an id, with null
+`height_cm`/`weight_kg`. That is consistent with erring toward inclusion, and
+visible rather than silent.
 
 **Names disagree across sources on accents, punctuation and whitespace.** nba's
 "Egor Dëmin" is espn's "Egor Demin"; espn's "P.J. Hairston" is nba's "PJ

@@ -29,15 +29,52 @@ class NBAComponent:
 
         logger.info("nba.player_season_stats")
         dfs = []
-        for player in ls_pl:
-            player_season = nba_ep.playercareerstats.PlayerCareerStats(player_id=str(player))
-            player_season = pl.from_pandas(player_season.data_sets[0].get_data_frame())
-            dfs.append(player_season)
-            ix = ls_pl.index(player)
+        failed = []
+        empty = []
+        for ix, player in enumerate(ls_pl):
+            # Two distinct outcomes to survive, and continue rather than the
+            # break get_player_box_score uses, because neither is exceptional
+            # here: util.player_directory_vw errs toward including a questionable
+            # nba id (see its comment on the guard), so a handful of
+            # pre-season-only non-NBA participants reach this loop each season.
+            # Breaking on the first would mean one such id costs the whole fetch.
+            try:
+                player_season = nba_ep.playercareerstats.PlayerCareerStats(player_id=str(player))
+                frame = pl.from_pandas(player_season.data_sets[0].get_data_frame())
+            except Exception:
+                logger.exception("player_id %s failed", player)
+                failed.append(player)
+                time.sleep(1)
+                continue
+
+            # An id with no career rows comes back as a 0-row frame rather than
+            # as an error, and pandas infers every column of it as object, so
+            # PLAYER_ID arrives as String where a real player's is Int64. Letting
+            # that reach pl.concat raises SchemaError and loses the entire run —
+            # which is what actually happens for a non-NBA id, not an exception.
+            if frame.is_empty():
+                empty.append(player)
+            else:
+                dfs.append(frame)
             if ix % 50 == 0:
                 logger.debug("player: %d / %d", ix, len(ls_pl))
             time.sleep(1)
-        logger.debug("player: %d / %d", ix, len(ls_pl))
+        logger.debug("player: %d / %d", len(ls_pl), len(ls_pl))
+
+        if empty:
+            logger.info(
+                "player_season_stats: %d id(s) returned no rows (not NBA players): %s",
+                len(empty), empty,
+            )
+
+        if failed:
+            logger.warning(
+                "player_season_stats: %d player(s) failed: %s", len(failed), failed
+            )
+
+        if not dfs:
+            logger.error("player_season_stats: nothing fetched, skipping write")
+            return
 
         df = (
             pl.concat(dfs)
@@ -53,18 +90,50 @@ class NBAComponent:
 
         logger.info("nba.player_info")
         dfs = []
-        for player in ls_pl:
-            player_info = nba_ep.commonplayerinfo.CommonPlayerInfo(player_id=str(player))
-            player_info = pl.from_pandas(player_info.data_sets[0].get_data_frame())
-            dfs.append(player_info)
-            ix = ls_pl.index(player)
-            if ix % 50 == 0:
-                logger.debug("player:", ix, "/", len(ls_pl))
-            time.sleep(1)
-        logger.debug("player:", ix, "/", len(ls_pl))
+        failed = []
+        empty = []
+        for ix, player in enumerate(ls_pl):
+            # Same two outcomes as get_player_season_stats; see its comments.
+            try:
+                player_info = nba_ep.commonplayerinfo.CommonPlayerInfo(player_id=str(player))
+                frame = pl.from_pandas(player_info.data_sets[0].get_data_frame())
+            except Exception:
+                logger.exception("player_id %s failed", player)
+                failed.append(player)
+                time.sleep(1)
+                continue
 
+            if frame.is_empty():
+                empty.append(player)
+            else:
+                dfs.append(frame)
+            if ix % 50 == 0:
+                logger.debug("player: %d / %d", ix, len(ls_pl))
+            time.sleep(1)
+        logger.debug("player: %d / %d", len(ls_pl), len(ls_pl))
+
+        if empty:
+            logger.info(
+                "player_info: %d id(s) returned no rows (not NBA players): %s",
+                len(empty), empty,
+            )
+
+        if failed:
+            logger.warning("player_info: %d player(s) failed: %s", len(failed), failed)
+
+        if not dfs:
+            logger.error("player_info: nothing fetched, skipping write")
+            return
+
+        # diagonal_relaxed because CommonPlayerInfo's column set is not stable
+        # across players: it omits SUPPLEMENTAL_STATUS for some ids, so frames
+        # arrive 33 or 34 wide and a plain concat raises ShapeError. Missing
+        # columns become null, and write_ordered conforms to the registration
+        # afterwards regardless. get_player_season_stats keeps a strict concat —
+        # its frames are a consistent 27 wide and its empty-frame guard is what
+        # that loop needs.
         df = (
-            pl.concat(dfs)
+            pl.concat(dfs, how="diagonal_relaxed")
             .clean_names(case_type="snake")
             .with_columns(pl.col("height").str.split("-"))
             .with_columns(
@@ -73,10 +142,19 @@ class NBAComponent:
                     (pl.col("weight").cast(pl.Float64, strict=False) / 2.2046)
                     .round(3)
                     .alias("weight_kg"),
+                    # strict=False and null_on_oob to match how weight above is
+                    # already handled. A player with no listed height comes back
+                    # with height "", which splits to [""] — one element, not two,
+                    # and not castable — so a strict cast raises and loses the
+                    # whole run rather than nulling one derived value. That is
+                    # reachable for the non-NBA ids the directory guard lets
+                    # through, and for any genuine player with the field blank.
                     (
                         (
-                            pl.col("height").list.get(0).cast(pl.Float64) * 12
-                            + pl.col("height").list.get(1).cast(pl.Float64)
+                            pl.col("height").list.get(0, null_on_oob=True)
+                            .cast(pl.Float64, strict=False) * 12
+                            + pl.col("height").list.get(1, null_on_oob=True)
+                            .cast(pl.Float64, strict=False)
                         )
                         * 2.54
                     )
