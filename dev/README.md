@@ -587,12 +587,20 @@ merges are not yet applied.
   directory view. Worth fixing at source.
 - **`util.conformed_player_id` has been renamed `conformed_player_id_RETIRED`**
   and the seed reads it under that name, quoted, since Postgres folds unquoted
-  identifiers to lower case. **Do not drop it.** It holds espn/yahoo ids the live
-  directory never reports — ids for players outside the seasons fty has data for
-  — so `player_source_id` is *not* fully reconstructible from
-  `player_directory_vw` alone. Found the hard way: deleting every espn mapping
-  and re-resolving lost 23 of them and minted 21 spurious players. A rebuild
-  must run the seed, not just `conform_player_ids()`.
+  identifiers to lower case.
+
+  It is **safe to drop** whenever you are satisfied with the current state.
+  Nothing reads it in steady state, and `player_source_id` is a strict superset:
+  of its 2871 unpivoted ids, **0 are absent** from the live table, which holds
+  5070. Dropping it costs only the ability to re-run
+  `build_player_identity.sql` from nothing.
+
+  What genuinely cannot be regenerated is `player_source_id` itself.
+  `player_directory_vw` never reports espn/yahoo ids for players outside the
+  seasons fty holds data for, so the directory alone rebuilds an incomplete
+  table — deleting every espn mapping and re-resolving lost 23 of them and
+  minted 21 spurious players. **So back up `player_source_id`; the retired table
+  is a convenience, not the system of record.**
 - `utility.deduplicate_tables` is still dead code: it takes a `db_con` with
   `.db_con` and `.cur_season`, attributes from the pre-split god-object.
 

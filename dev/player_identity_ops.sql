@@ -88,12 +88,31 @@ ON CONFLICT (platform, source_id) DO UPDATE
     SET player_key  = EXCLUDED.player_key,
         source_name = EXCLUDED.source_name;
 
--- 8. REBUILD FROM SCRATCH. Run dev/build_player_identity.sql (which re-seeds
--- from util."conformed_player_id_RETIRED"), then the views file, then
--- hub.util.conform_player_ids(). Do NOT try to rebuild from the directory alone:
--- the retired table holds espn/yahoo ids the directory never reports, and player_
--- key is an identity column so every key is renumbered by a rebuild.
--- Expected afterwards: 2737 players, 5070 mappings, 0 orphans, 0 backlog.
+-- 8. SNAPSHOT BEFORE ANYTHING DESTRUCTIVE. player_source_id is the system of
+-- record and is NOT reconstructible from util.player_directory_vw alone, since
+-- the directory never reports espn/yahoo ids for players outside the seasons fty
+-- holds data for. Take a copy first; player_key is an identity column, so a
+-- rebuild renumbers every key and anything referencing them must be remapped.
+CREATE TABLE util.player_bak            AS SELECT * FROM util.player;
+CREATE TABLE util.player_source_id_bak  AS SELECT * FROM util.player_source_id;
+
+-- 8b. REBUILD FROM SCRATCH. dev/build_player_identity.sql (re-seeds from
+-- util."conformed_player_id_RETIRED"), then the views file, then
+-- hub.util.conform_player_ids(). Expected afterwards: 2737 players, 5070
+-- mappings, 0 orphans, 0 backlog. Verify the retired table is still redundant
+-- before relying on this path:
+WITH retired AS (
+  SELECT src.platform, src.source_id
+  FROM util."conformed_player_id_RETIRED" c
+  CROSS JOIN LATERAL (VALUES ('nba', c.nba_id), ('espn', c.espn_id),
+                             ('yahoo', c.yahoo_id), ('statyx', c.statyx_id))
+    AS src(platform, source_id)
+  WHERE src.source_id IS NOT NULL
+)
+SELECT count(*) AS ids_only_in_retired   -- 0 means the live table has everything
+FROM retired r
+WHERE NOT EXISTS (SELECT 1 FROM util.player_source_id m
+                  WHERE m.platform = r.platform AND m.source_id = r.source_id);
 
 -- 9. ADD A PLATFORM. No DDL — the mapping table is already long. Add a UNION arm
 -- to util.player_directory_vw returning (season, platform, source_id,
