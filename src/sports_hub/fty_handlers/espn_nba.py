@@ -109,35 +109,62 @@ class EspnNbaHandler(FtyHandler):
         return pl.DataFrame(dfs)
 
     def get_league_matchup(self, con) -> pl.DataFrame:
-        df_byes = self.db.read(
-            f"SELECT * FROM {self.schema}.league_byes WHERE platform = 'ESPN' AND season = '{con.season}' AND league_id = {con.league_id}",
-        )
+        """
+        One row per competitor per period they have an opponent, with the period
+        taken from ESPN's own matchupPeriodId.
+
+        Real matchups only — a bye produces no row here, and league_byes carries
+        the complement. The two are disjoint, so a complete competitor-by-period
+        grid is a UNION ALL of the pair and its row count is exactly
+        competitors x periods.
+
+        This used to enumerate con.teams[].schedule and take the period from list
+        POSITION, which is why it had to read league_byes first and splice a None
+        into the list: espn_api omits a bye from that list in some seasons, so
+        every later entry sat one period early unless padded. Reading
+        matchupPeriodId removes the need entirely — a missing bye is simply an
+        absent row, nothing shifts, and the write order between this and
+        get_league_byes no longer matters.
+
+        Each schedule entry is emitted from both sides, so a competitor appears
+        as `competitor_id` in its own row and as `opponent_id` in its opponent's.
+        """
+        schedule = con.espn_request.get_league().get("schedule") or []
 
         dfs = []
-        for competitor in con.teams:
-            if competitor.team_id in df_byes["competitor_id"].to_list():
-                bye_periods = (
-                    df_byes.filter(pl.col("competitor_id") == competitor.team_id)
-                    .get_column("matchup_period")
-                    .to_list()
-                )
-                for ix in bye_periods:
-                    competitor.schedule.insert(ix - 1, None)
+        for entry in schedule:
+            home, away = entry.get("home"), entry.get("away")
+            # One-sided entries are byes and belong to get_league_byes.
+            if not (home and away):
+                continue
 
-            for ix, opponent in enumerate(competitor.schedule):
+            home_id, away_id = home.get("teamId"), away.get("teamId")
+            if home_id is None or away_id is None:
+                continue
+
+            for competitor_id, opponent_id in ((home_id, away_id), (away_id, home_id)):
                 dfs.append(
                     {
                         "season": con.season,
                         "platform": self.NAME,
                         "league_id": con.league_id,
-                        "matchup_period": ix + 1,
-                        "competitor_id": competitor.team_id,
-                        "opponent_id": opponent.home_team.team_id
-                        if opponent and competitor.team_id == opponent.away_team.team_id
-                        else (opponent.away_team.team_id if opponent else None),
+                        "matchup_period": entry["matchupPeriodId"],
+                        "competitor_id": competitor_id,
+                        "opponent_id": opponent_id,
                     }
                 )
-        return pl.DataFrame(dfs)
+
+        return pl.DataFrame(
+            dfs,
+            schema={
+                "season": pl.String,
+                "platform": pl.String,
+                "league_id": pl.Int64,
+                "matchup_period": pl.Int64,
+                "competitor_id": pl.Int64,
+                "opponent_id": pl.Int64,
+            },
+        ).sort("matchup_period", "competitor_id")
 
     def get_competitor_roster(self, con) -> pl.DataFrame:
         dfs = []

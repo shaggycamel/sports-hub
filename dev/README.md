@@ -640,6 +640,41 @@ league-season missing from `customer_league`:
 | 2025-26 | 4 | all four, periods 19 / 17 / 20 / 18 |
 | 2026-27 | 3 | none yet |
 
+## league_matchup and league_byes are now complements
+
+`get_league_matchup` took its period from the POSITION of an entry in
+`con.teams[].schedule`, and read `league_byes` in order to splice a `None` into
+that list first — espn_api omits a bye from the list in some seasons and inserts
+`None` in others, so the padding was load bearing and a wrong bye period shifted
+every later matchup. Both writers now read ESPN's `matchupPeriodId`:
+
+- `league_matchup` — real matchups only, `opponent_id` never null
+- `league_byes` — the complement
+
+Disjoint by construction, so `fty_dev.league_schedule_grid_vw` is a plain
+`UNION ALL` (see `build_league_schedule_vw.sql`), and **matchups + byes =
+competitors x periods** holds for all ten league-seasons — a cheap invariant to
+assert after any rerun. Neither writer depends on the other any more, so the
+`sequence = 1` on `league_byes` in `util.update_schedule` is no longer needed.
+
+Regenerated all ten league-seasons: 1978 rows -> 2168, no null opponents left,
+and 2024-25's two bye rows moved out of `league_matchup` in the process, which
+also makes the representation uniform across seasons.
+
+### The delete-scope bug this exposed
+
+Five methods — `get_league`, `get_league_categories`, `get_free_agents`,
+`get_league_competitor`, `get_league_matchup` — scoped their DELETE to
+`season = ctx.cur_season AND league_id IN (...)` while writing `con.season` rows.
+Harmless only while every connection was built against the current season. Once
+leagues connect at their own season, running any of them for an earlier season
+would **delete the current season's rows and insert the other season's in their
+place**. `_delete_connected()` now clears exactly the `(season, league_id)` pairs
+that are connected. This had to be fixed before the regeneration above could be
+run at all.
+
+### Superseded note
+
 **`league_matchup` needs no regeneration** — checked cell by cell against the
 corrected byes, and every bye lands on the right period. For league 24608
 competitors 1 and 11 hold rows at periods 1-18 and 20-21 and are missing exactly

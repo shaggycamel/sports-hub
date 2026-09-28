@@ -169,15 +169,35 @@ class FtyComponent:
             dfs.append(getattr(handler, method_name)(con))
         return dfs
 
+    def _delete_connected(self, table: str) -> None:
+        """
+        Clear exactly the (season, league_id) pairs currently connected, before
+        the dispatch methods rewrite them.
+
+        These deletes used to read `season = ctx.cur_season AND league_id IN
+        (...)`, which was harmless only because every connection was built
+        against the current season regardless of what was asked for. Now that a
+        league connects at its own season, that form would delete the CURRENT
+        season's rows and insert another season's in their place. Scoping to the
+        connections' own seasons is what makes a per-season rerun safe.
+        """
+        pairs = ", ".join(
+            f"('{con.season}', {league_id})"
+            for (_sport, _platform, league_id), con in self.leagues.items()
+        )
+        if not pairs:
+            return
+
+        self.db.execute(
+            f"DELETE FROM {self.schema}.{table} WHERE (season, league_id) IN ({pairs})"
+        )
+
     def get_league(self):
         if not self.leagues:
             logger.warning("No leagues connected — skipping get_league")
             return
 
-        self.db.execute(
-            f"DELETE FROM {self.schema}.league "
-            f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
-        )
+        self._delete_connected("league")
         df = pl.concat(self._dispatch("get_league"))
         self.db.write(df, "league", schema=self.schema)
         logger.info(f"{self.schema}.league has been updated (%d rows)", len(df))
@@ -187,10 +207,7 @@ class FtyComponent:
             logger.warning("No leagues connected — skipping get_league_categories")
             return
 
-        self.db.execute(
-            f"DELETE FROM {self.schema}.league_categories "
-            f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
-        )
+        self._delete_connected("league_categories")
         df = pl.concat(self._dispatch("get_league_categories"))
         self.db.write(df, "league_categories", schema=self.schema)
         logger.info(f"{self.schema}.league_categories has been updated (%d rows)", len(df))
@@ -200,10 +217,7 @@ class FtyComponent:
             logger.warning("No leagues connected — skipping get_free_agents")
             return
 
-        self.db.execute(
-            f"DELETE FROM {self.schema}.free_agents "
-            f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
-        )
+        self._delete_connected("free_agents")
         df = pl.concat(self._dispatch("get_free_agents"))
         self.db.write(df, "free_agents", schema=self.schema)
         logger.info(f"{self.schema}.free_agents has been updated (%d rows)", len(df))
@@ -213,10 +227,7 @@ class FtyComponent:
             logger.warning("No leagues connected — skipping get_league_competitor")
             return
 
-        self.db.execute(
-            f"DELETE FROM {self.schema}.league_competitor "
-            f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
-        )
+        self._delete_connected("league_competitor")
         df = pl.concat(self._dispatch("get_league_competitor"))
         self.db.write(df, "league_competitor", schema=self.schema)
         logger.info(f"{self.schema}.league_competitor has been updated (%d rows)", len(df))
@@ -226,10 +237,7 @@ class FtyComponent:
             logger.warning("No leagues connected — skipping get_league_matchup")
             return
 
-        self.db.execute(
-            f"DELETE FROM {self.schema}.league_matchup "
-            f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
-        )
+        self._delete_connected("league_matchup")
         df = pl.concat(self._dispatch("get_league_matchup"))
         self.db.write(df, "league_matchup", schema=self.schema)
         logger.info(f"{self.schema}.league_matchup has been updated (%d rows)", len(df))
