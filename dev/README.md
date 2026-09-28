@@ -604,6 +604,51 @@ merges are not yet applied.
 - `utility.deduplicate_tables` is still dead code: it takes a `db_con` with
   `.db_con` and `.cur_season`, attributes from the pre-split god-object.
 
+## league_byes cannot be backfilled yet — the method is unsound
+
+Attempted across all 10 ESPN league-seasons once `connect_leagues(season=...)`
+was fixed to actually connect at the requested season. Result: nothing gained,
+and one row set written then removed.
+
+`get_league_byes` infers byes by comparing each competitor's `schedule` LENGTH
+against a scaffold of all periods, so a missing entry can only ever be attributed
+to the **trailing** period. It cannot locate a mid-season bye, and every bye it
+has ever produced sits at its league's final period — an artefact of the method,
+not a fact about the schedules.
+
+Demonstrated against 2024-25 league 95537: the method placed byes for competitors
+5 and 26 at period **20**, while `league_matchup` already carried ESPN's own null
+opponent for those same two competitors at period **18**. Those rows were deleted
+again, because `get_league_matchup` reads `league_byes` and pads a `None` at that
+index — a future run would have added a second bye at 20 on top of the real one
+at 18, shifting periods 18-20.
+
+To fix it properly the bye's period has to come from ESPN's own numbering
+(`matchupPeriodId` in the raw schedule, or the position of a `None` where ESPN
+includes one) rather than from a length difference. Note both behaviours occur:
+in 2024-25 ESPN included the `None` (hence the null-opponent rows), while in
+2025-26 it omitted the bye entirely (hence 250 rows where 12 x 21 = 252).
+
+Current state: `league_byes` holds only 2025-26, unchanged from before the
+attempt. 2023-24 (8 teams) and 2026-27 genuinely produce none.
+
+**A registration gap, separately:** 2024-25 league 1966813226 appears in
+`fty_dev.league` but not in `fty_dev.customer_league`, so any season loop driven
+off registrations skips it.
+
+## Earlier seasons were NOT corrupted by the connect bug
+
+Checked, because the bug meant every pre-fix connection returned current-season
+data regardless of the season asked for. No corruption:
+
+- Writes were stamped `con.season`, which was also the current season, so rows
+  were always labelled consistently with the data they held. Nothing is
+  mislabelled; the bug simply made an earlier-season backfill a silent no-op.
+- `fty_dev`'s history is genuinely historical. League 1966813226's 2023-24
+  competitors are 8 different people ("El Barto", "Four Quarter Fiends") from its
+  2025-26 10 ("Le'GM", "3s and Ds"), and the fixed connection returns 8 teams for
+  2023-24 against 10 for 2025-26. That data came from `fty`, fetched in-season.
+
 ## Files
 
 - `build_fty_dev.sql` — the schema, idempotent
