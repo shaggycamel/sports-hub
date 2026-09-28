@@ -70,7 +70,7 @@ class FtyComponent:
         one league and it only needs connecting once.
         """
         return self.db.read(
-            "SELECT DISTINCT cl.platform, cl.league_id, cp.credentials "
+            "SELECT DISTINCT cl.season, cl.platform, cl.league_id, cp.credentials "
             f"FROM {self.schema}.customer_league cl "
             f"JOIN {self.schema}.customer_platform cp "
             "  ON cp.customer_id = cl.customer_id AND cp.platform = cl.platform "
@@ -84,6 +84,15 @@ class FtyComponent:
         if sport == "nba":
             return self.ctx.cur_season_year
         raise NotImplementedError(f"No season source configured for sport '{sport}'")
+
+    @staticmethod
+    def _season_year_from(season: str) -> int:
+        """
+        Opening year of a "YYYY-YY" season label, matching Context's convention.
+        Kept separate from _season_year_for, which answers the different question
+        of which season is current for a sport.
+        """
+        return int(str(season)[:4])
 
     def _connect_leagues(self, leagues: pl.DataFrame) -> dict:
         """
@@ -123,7 +132,20 @@ class FtyComponent:
                 logger.warning("No handler registered for %s (league %s) — skipping", key, league_id)
                 continue
 
-            season_year = self._season_year_for(self.sport)
+            # The row's own season wins, so a league registered for 2023-24
+            # connects to 2023-24. Before this, season_year came only from
+            # _season_year_for (i.e. ctx.cur_season_year), which meant
+            # connect_leagues(season=...) chose WHICH leagues to connect but
+            # still connected every one of them to the current season — the
+            # returned con was stamped con.season = ctx.cur_season and ESPN
+            # reported seasonId for the current year regardless of what was
+            # asked for. Harmless in the daily path, but it made any backfill of
+            # an earlier season silently a no-op.
+            row_season = row.get("season")
+            season_year = (
+                self._season_year_from(row_season) if row_season
+                else self._season_year_for(self.sport)
+            )
             context = {**row_creds, "league_id": league_id, "cur_year": season_year}
 
             section = platform.lower() + "_api"
