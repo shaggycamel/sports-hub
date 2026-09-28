@@ -674,30 +674,26 @@ invisible in it.
 ### Calling it
 
 ```python
-fty = FtyComponent(hub.db, hub.ctx, "nba", pl.DataFrame(), schema="fty_dev")
+fty.connect_leagues()                    # current season, at season start
+fty.get_league_matchup_dates()
 
-fty.get_league_matchup_dates()            # every league-season on record
-fty.get_league_matchup_dates("2026-27")   # one season — the season-start call
+fty.connect_leagues(season="2023-24")    # or backfill an earlier one
+fty.get_league_matchup_dates()
 ```
 
-One method, not a get/backfill pair. `backfill_matchups` earns its place beside
-the per-period getters because those run daily and it is the exception; nothing
-schedules this one, so a variant that works from `self.leagues` would have no
-caller. It does its own connecting for the same reason. To derive a single league
-while debugging, connect it and call the handler directly.
+Works from `self.leagues` like its neighbours, so the season comes from
+`connect_leagues` — which only targets a season correctly because of the connect
+fix below. No `util.update_schedule` row: derived once per season, like `league`,
+`league_categories` and `league_competitor`.
 
-It is driven off `<schema>.league`, not `customer_league`,
-because the two disagree — 2024-25 league 1966813226 has a league row and no
-registration, which is exactly how it ended up as the one league-season with no
-dates. Unregistered league-seasons borrow their platform's credentials, which are
-per customer and platform rather than per season.
+It dispatches BEFORE deleting, unlike the methods around it. The handler raises
+when `nba.key_dates` has no opener, and deleting first would leave the league
+with no dates at all — which silently removes it from `league_schedule_vw`.
 
-Each league-season connects and writes on its own, so one failure does not
-abandon the rest, and the run reports what it skipped and why. Verified
-idempotent: a second run reproduces all 147 rows byte for byte.
-
-No `util.update_schedule` row — this is derived once per season, like `league`,
-`league_categories` and `league_competitor`, and the runner is daily.
+One gap this path does not reach: 2024-25 league 1966813226 has a `league` row
+but no `customer_league` registration, so `connect_leagues(season="2024-25")`
+connects only 95537. Its 24 rows are in place already, but they were written by
+borrowing the platform's credentials; registering the league is the durable fix.
 
 **2026-27 needs one thing: an `nba.key_dates` row** (Regular Season, and All Star
 for the double-week). The handler raises rather than writing an empty frame, and
