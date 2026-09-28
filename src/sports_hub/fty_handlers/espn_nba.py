@@ -416,30 +416,61 @@ class EspnNbaHandler(FtyHandler):
         )
 
     def get_league_byes(self, con) -> pl.DataFrame:
-        real_rows = []
-        for competitor in con.teams:
-            for ix, opponent in enumerate(competitor.schedule):
-                real_rows.append(
-                    {"matchup_period": ix + 1, "competitor_id": competitor.team_id}
-                )
+        """
+        Periods where a competitor has no opponent, taken from ESPN's own
+        matchupPeriodId.
 
-        df_real = pl.DataFrame(real_rows).with_columns(pl.lit(True).alias("has_matchup"))
+        ESPN represents a bye as a schedule entry carrying only one side: a
+        `home` with no `away` (or the reverse). That entry's matchupPeriodId is
+        the authoritative period, so byes are read straight off the raw league
+        payload rather than inferred.
 
-        df_periods = df_real.select("matchup_period").unique()
-        df_competitors = pl.DataFrame([{"competitor_id": c.team_id} for c in con.teams])
-        df_scaffold = df_periods.join(df_competitors, how="cross")
+        The previous implementation compared each competitor's `schedule` LENGTH
+        against a scaffold of every period and treated the shortfall as a bye.
+        That can only ever attribute a bye to the TRAILING period, so a
+        mid-season bye was reported at the wrong index — and since
+        get_league_matchup pads a None at that index, the error propagated into
+        league_matchup. Every 2025-26 row it produced was two periods late:
+        league 24608's bye is at 19 and it said 21, 95537's is at 17 and it said
+        19, 1382487116's is at 20 and it said 22, 1966813226's is at 18 and it
+        said 20. Verified against the one-sided entries for all ten known ESPN
+        league-seasons, four of which have no byes at all.
 
-        df_byes = (
-            df_scaffold.join(df_real, on=["matchup_period", "competitor_id"], how="left")
-            .filter(pl.col("has_matchup").is_null())
-            .with_columns(
-                [
-                    pl.lit(con.season).alias("season"),
-                    pl.lit(self.NAME).alias("platform"),
-                    pl.lit(con.league_id).alias("league_id"),
-                ]
+        con.teams[].schedule is not used here: espn_api omits the bye from that
+        list in some seasons and inserts None in others, which is what made a
+        length comparison look plausible in the first place.
+        """
+        schedule = con.espn_request.get_league().get("schedule") or []
+
+        rows = []
+        for entry in schedule:
+            home, away = entry.get("home"), entry.get("away")
+            if home and away:
+                continue
+
+            side = home or away
+            if not side or side.get("teamId") is None:
+                continue
+
+            rows.append(
+                {
+                    "season": con.season,
+                    "platform": self.NAME,
+                    "league_id": con.league_id,
+                    "matchup_period": entry["matchupPeriodId"],
+                    "competitor_id": side["teamId"],
+                }
             )
-            .select("season", "platform", "league_id", "matchup_period", "competitor_id")
-            .sort("matchup_period", "competitor_id")
-        )
-        return df_byes
+
+        # Explicit schema so a league with no byes still returns a writable,
+        # correctly typed empty frame rather than a shapeless one.
+        return pl.DataFrame(
+            rows,
+            schema={
+                "season": pl.String,
+                "platform": pl.String,
+                "league_id": pl.Int64,
+                "matchup_period": pl.Int64,
+                "competitor_id": pl.Int64,
+            },
+        ).sort("matchup_period", "competitor_id")

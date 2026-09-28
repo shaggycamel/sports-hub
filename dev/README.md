@@ -604,33 +604,47 @@ merges are not yet applied.
 - `utility.deduplicate_tables` is still dead code: it takes a `db_con` with
   `.db_con` and `.cur_season`, attributes from the pre-split god-object.
 
-## league_byes cannot be backfilled yet — the method is unsound
+## league_byes: fixed and backfilled for every ESPN league-season
 
-Attempted across all 10 ESPN league-seasons once `connect_leagues(season=...)`
-was fixed to actually connect at the requested season. Result: nothing gained,
-and one row set written then removed.
+`get_league_byes` now reads ESPN's own `matchupPeriodId` off the raw league
+payload. A bye is a schedule entry carrying only one side — a `home` with no
+`away` — and that entry's period is authoritative.
 
-`get_league_byes` infers byes by comparing each competitor's `schedule` LENGTH
-against a scaffold of all periods, so a missing entry can only ever be attributed
-to the **trailing** period. It cannot locate a mid-season bye, and every bye it
-has ever produced sits at its league's final period — an artefact of the method,
-not a fact about the schedules.
+The old implementation compared each competitor's `schedule` LENGTH against a
+scaffold of every period and called the shortfall a bye, which can only ever
+attribute one to the TRAILING period. Every row it had produced was two periods
+late:
 
-Demonstrated against 2024-25 league 95537: the method placed byes for competitors
-5 and 26 at period **20**, while `league_matchup` already carried ESPN's own null
-opponent for those same two competitors at period **18**. Those rows were deleted
-again, because `get_league_matchup` reads `league_byes` and pads a `None` at that
-index — a future run would have added a second bye at 20 on top of the real one
-at 18, shifting periods 18-20.
+| league-season | true bye period | had been stored as |
+|---|---|---|
+| 2025-26 24608 | 19 (competitors 1, 11) | 21 |
+| 2025-26 95537 | 17 (competitors 5, 26) | 19 |
+| 2025-26 1382487116 | 20 (competitors 4, 12) | 22 |
+| 2025-26 1966813226 | 18 (competitors 4, 5) | 20 |
 
-To fix it properly the bye's period has to come from ESPN's own numbering
-(`matchupPeriodId` in the raw schedule, or the position of a `None` where ESPN
-includes one) rather than from a length difference. Note both behaviours occur:
-in 2024-25 ESPN included the `None` (hence the null-opponent rows), while in
-2025-26 it omitted the bye entirely (hence 250 rows where 12 x 21 = 252).
+Cross-validated independently: for 2024-25 league 95537 the new method gives
+period 18 for competitors 5 and 26, which is exactly where `league_matchup`
+already carried ESPN's own null-opponent rows.
 
-Current state: `league_byes` holds only 2025-26, unchanged from before the
-attempt. 2023-24 (8 teams) and 2026-27 genuinely produce none.
+`con.teams[].schedule` is deliberately unused — espn_api omits the bye from that
+list in some seasons and inserts `None` in others, which is what made a length
+comparison look plausible.
+
+State after the backfill, driven off `fty_dev.league` so it covers the
+league-season missing from `customer_league`:
+
+| season | leagues | byes |
+|---|---|---|
+| 2023-24 | 1 | none (8 teams, full bracket) |
+| 2024-25 | 2 | 95537 at period 18; 1966813226 none |
+| 2025-26 | 4 | all four, periods 19 / 17 / 20 / 18 |
+| 2026-27 | 3 | none yet |
+
+**`fty_dev.league_matchup` for 2025-26 is still built on the old wrong byes** and
+needs regenerating. Its bye competitors currently hold 20 periods rather than 21
+with a gap, so their periods after the bye are shifted down by one (league 24608:
+250 rows where 12 x 21 = 252, and no null opponents). 2024-25 is unaffected —
+ESPN supplied the `None` natively there, at the correct period 18.
 
 **A registration gap, separately:** 2024-25 league 1966813226 appears in
 `fty_dev.league` but not in `fty_dev.customer_league`, so any season loop driven
