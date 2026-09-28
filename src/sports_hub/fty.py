@@ -242,32 +242,17 @@ class FtyComponent:
         self.db.write(df, "league_matchup", schema=self.schema)
         logger.info(f"{self.schema}.league_matchup has been updated (%d rows)", len(df))
 
-    def get_league_matchup_dates(self):
-        """
-        Derive each connected league's matchup period dates.
-
-        Dispatches BEFORE deleting, unlike the other methods here. The handler
-        raises when nba.key_dates has no opener for the season, and deleting
-        first would leave the league with no dates at all — which silently
-        removes it from league_schedule_vw, since that view joins them.
-        """
-        if not self.leagues:
-            logger.warning("No leagues connected — skipping get_league_matchup_dates")
-            return
-
-        df = pl.concat(self._dispatch("get_league_matchup_dates"))
-        self._delete_connected("league_matchup_dates")
-        self.db.write(df, "league_matchup_dates", schema=self.schema)
-        logger.info(f"{self.schema}.league_matchup_dates has been updated (%d rows)", len(df))
-
-    def backfill_matchup_dates(self, season: str | None = None) -> None:
+    def get_league_matchup_dates(self, season: str | None = None) -> None:
         """
         Derive matchup period dates for every league-season on record, or for one
         season when given.
 
-        The repeatable counterpart to get_league_matchup_dates, which only covers
-        whatever is currently connected. Use it to seed a new season once its
-        nba.key_dates row exists, or to regenerate after a rule change.
+        Unlike its neighbours this does its own connecting rather than working
+        from self.leagues, because the table is derived once per season and there
+        is no daily caller to inherit a connection from. One method rather than a
+        get/backfill pair for the same reason: backfill_matchups earns its place
+        beside the per-period getters because those run daily, and nothing here
+        does.
 
         Driven off `<schema>.league` rather than customer_league, because the two
         disagree: 2024-25 league 1966813226 has a league row but no registration,
@@ -278,7 +263,12 @@ class FtyComponent:
 
         Each league-season is connected and written on its own, so one failure
         does not abandon the rest. A season with no nba.key_dates opener is
-        logged and skipped, leaving whatever it already had untouched.
+        logged and skipped, leaving whatever it already had untouched — which is
+        also why the write deletes AFTER the handler has returned rather than
+        before, unlike the dispatch methods above.
+
+        To derive a single league while debugging, connect it and call the
+        handler directly.
         """
         leagues = self.db.read(
             f"SELECT DISTINCT season, platform, league_id FROM {self.schema}.league "
@@ -287,7 +277,7 @@ class FtyComponent:
         )
 
         if leagues.is_empty():
-            logger.warning("No league rows found — skipping backfill_matchup_dates")
+            logger.warning("No league rows found — skipping get_league_matchup_dates")
             return
 
         fallback = {
@@ -317,13 +307,15 @@ class FtyComponent:
 
             try:
                 self.leagues = self._connect_leagues(pl.DataFrame([{**row, "credentials": creds}]))
-                self.get_league_matchup_dates()
+                df = pl.concat(self._dispatch("get_league_matchup_dates"))
+                self._delete_connected("league_matchup_dates")
+                self.db.write(df, "league_matchup_dates", schema=self.schema)
                 done += 1
             except Exception as exc:
                 skipped.append((key, f"{type(exc).__name__}: {exc}"))
 
         logger.info(
-            "%s.league_matchup_dates backfill: %d league-season(s) written, %d skipped",
+            "%s.league_matchup_dates: %d league-season(s) written, %d skipped",
             self.schema, done, len(skipped),
         )
         for key, reason in skipped:

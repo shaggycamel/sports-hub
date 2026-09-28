@@ -676,14 +676,17 @@ invisible in it.
 ```python
 fty = FtyComponent(hub.db, hub.ctx, "nba", pl.DataFrame(), schema="fty_dev")
 
-fty.backfill_matchup_dates()            # every league-season on record
-fty.backfill_matchup_dates("2026-27")   # one season — the season-start call
-
-fty.connect_leagues(season="2025-26")   # or, for whatever is connected
-fty.get_league_matchup_dates()
+fty.get_league_matchup_dates()            # every league-season on record
+fty.get_league_matchup_dates("2026-27")   # one season — the season-start call
 ```
 
-`backfill_matchup_dates` is driven off `<schema>.league`, not `customer_league`,
+One method, not a get/backfill pair. `backfill_matchups` earns its place beside
+the per-period getters because those run daily and it is the exception; nothing
+schedules this one, so a variant that works from `self.leagues` would have no
+caller. It does its own connecting for the same reason. To derive a single league
+while debugging, connect it and call the handler directly.
+
+It is driven off `<schema>.league`, not `customer_league`,
 because the two disagree — 2024-25 league 1966813226 has a league row and no
 registration, which is exactly how it ended up as the one league-season with no
 dates. Unregistered league-seasons borrow their platform's credentials, which are
