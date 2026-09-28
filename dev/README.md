@@ -671,6 +671,31 @@ Generated for all seven league-seasons that have `nba.key_dates` coverage.
 `league_schedule_vw` for that season from 240 rows to 432 — the league had been
 invisible in it.
 
+### Calling it
+
+```python
+fty = FtyComponent(hub.db, hub.ctx, "nba", pl.DataFrame(), schema="fty_dev")
+
+fty.backfill_matchup_dates()            # every league-season on record
+fty.backfill_matchup_dates("2026-27")   # one season — the season-start call
+
+fty.connect_leagues(season="2025-26")   # or, for whatever is connected
+fty.get_league_matchup_dates()
+```
+
+`backfill_matchup_dates` is driven off `<schema>.league`, not `customer_league`,
+because the two disagree — 2024-25 league 1966813226 has a league row and no
+registration, which is exactly how it ended up as the one league-season with no
+dates. Unregistered league-seasons borrow their platform's credentials, which are
+per customer and platform rather than per season.
+
+Each league-season connects and writes on its own, so one failure does not
+abandon the rest, and the run reports what it skipped and why. Verified
+idempotent: a second run reproduces all 147 rows byte for byte.
+
+No `util.update_schedule` row — this is derived once per season, like `league`,
+`league_categories` and `league_competitor`, and the runner is daily.
+
 **2026-27 needs one thing: an `nba.key_dates` row** (Regular Season, and All Star
 for the double-week). The handler raises rather than writing an empty frame, and
 `get_league_matchup_dates` dispatches BEFORE deleting, so a missing key date

@@ -260,6 +260,75 @@ class FtyComponent:
         self.db.write(df, "league_matchup_dates", schema=self.schema)
         logger.info(f"{self.schema}.league_matchup_dates has been updated (%d rows)", len(df))
 
+    def backfill_matchup_dates(self, season: str | None = None) -> None:
+        """
+        Derive matchup period dates for every league-season on record, or for one
+        season when given.
+
+        The repeatable counterpart to get_league_matchup_dates, which only covers
+        whatever is currently connected. Use it to seed a new season once its
+        nba.key_dates row exists, or to regenerate after a rule change.
+
+        Driven off `<schema>.league` rather than customer_league, because the two
+        disagree: 2024-25 league 1966813226 has a league row but no registration,
+        and a loop over registrations skips it — which is how it came to be the
+        one league-season with no dates at all, and therefore invisible in
+        league_schedule_vw. Credentials are per customer and platform rather than
+        per season, so an unregistered league-season borrows its platform's.
+
+        Each league-season is connected and written on its own, so one failure
+        does not abandon the rest. A season with no nba.key_dates opener is
+        logged and skipped, leaving whatever it already had untouched.
+        """
+        leagues = self.db.read(
+            f"SELECT DISTINCT season, platform, league_id FROM {self.schema}.league "
+            + (f"WHERE season = '{season}' " if season else "")
+            + "ORDER BY season, league_id"
+        )
+
+        if leagues.is_empty():
+            logger.warning("No league rows found — skipping backfill_matchup_dates")
+            return
+
+        fallback = {
+            row["platform"]: row["credentials"]
+            for row in self.db.read(
+                f"SELECT DISTINCT platform, credentials FROM {self.schema}.customer_platform"
+            ).iter_rows(named=True)
+        }
+
+        registered = {
+            (row["season"], row["platform"], row["league_id"]): row["credentials"]
+            for row in self.db.read(
+                "SELECT DISTINCT cl.season, cl.platform, cl.league_id, cp.credentials "
+                f"FROM {self.schema}.customer_league cl "
+                f"JOIN {self.schema}.customer_platform cp "
+                "  ON cp.customer_id = cl.customer_id AND cp.platform = cl.platform"
+            ).iter_rows(named=True)
+        }
+
+        done, skipped = 0, []
+        for row in leagues.iter_rows(named=True):
+            key = (row["season"], row["platform"], row["league_id"])
+            creds = registered.get(key) or fallback.get(row["platform"])
+            if creds is None:
+                skipped.append((key, "no credentials for platform"))
+                continue
+
+            try:
+                self.leagues = self._connect_leagues(pl.DataFrame([{**row, "credentials": creds}]))
+                self.get_league_matchup_dates()
+                done += 1
+            except Exception as exc:
+                skipped.append((key, f"{type(exc).__name__}: {exc}"))
+
+        logger.info(
+            "%s.league_matchup_dates backfill: %d league-season(s) written, %d skipped",
+            self.schema, done, len(skipped),
+        )
+        for key, reason in skipped:
+            logger.warning("  skipped %s;%s %s — %s", key[1], key[2], key[0], reason)
+
     def get_recent_activity(self):
         df = pl.concat(self._dispatch("get_recent_activity"))
         self.db.write(df, "recent_activity", schema=self.schema)
