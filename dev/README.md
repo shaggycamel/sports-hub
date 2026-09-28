@@ -640,11 +640,21 @@ league-season missing from `customer_league`:
 | 2025-26 | 4 | all four, periods 19 / 17 / 20 / 18 |
 | 2026-27 | 3 | none yet |
 
-**`fty_dev.league_matchup` for 2025-26 is still built on the old wrong byes** and
-needs regenerating. Its bye competitors currently hold 20 periods rather than 21
-with a gap, so their periods after the bye are shifted down by one (league 24608:
-250 rows where 12 x 21 = 252, and no null opponents). 2024-25 is unaffected —
-ESPN supplied the `None` natively there, at the correct period 18.
+**`league_matchup` needs no regeneration** — checked cell by cell against the
+corrected byes, and every bye lands on the right period. For league 24608
+competitors 1 and 11 hold rows at periods 1-18 and 20-21 and are missing exactly
+19, their real bye. Nothing is shifted.
+
+Judging that by `competitors x periods` is the wrong yardstick and briefly led to
+the opposite conclusion here: the expectation has to subtract the bye cells, so
+league 24608's 250 rows are 12 x 21 - 2, not two short.
+
+The two seasons do represent a bye differently, which is worth knowing when
+querying rather than a defect: 2024-25 carries a row with a null `opponent_id`
+(ESPN supplied the `None` natively), while 2025-26 carries no row for that
+period. Both put it in the right place. Looking for null opponents in
+`league_matchup` therefore finds 2024-25's byes and misses 2025-26's —
+`league_byes` is the reliable source for both.
 
 **A registration gap, separately:** 2024-25 league 1966813226 appears in
 `fty_dev.league` but not in `fty_dev.customer_league`, so any season loop driven
