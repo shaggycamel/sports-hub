@@ -640,6 +640,42 @@ league-season missing from `customer_league`:
 | 2025-26 | 4 | all four, periods 19 / 17 / 20 / 18 |
 | 2026-27 | 3 | none yet |
 
+## league_matchup_dates is derived, not entered
+
+`get_league_matchup_dates` builds it from two inputs that already exist:
+
+1. **A season-level week grid.** Week 1 starts on the MONDAY of the week
+   containing the regular-season opener (`nba.key_dates`); weeks run Monday to
+   Sunday; the week containing the All-Star break absorbs the following one,
+   giving 14 days.
+2. **Each league's own `settings.scheduleSettings.matchupPeriods`**, mapping a
+   matchup period to a list of weeks. This is where the per-league difference
+   lives, and ESPN publishes it, so it needs no hand encoding: in 2025-26 league
+   95537 groups its playoff rounds as `[18, 19]` and `[20, 21]` while 24608 plays
+   each week as its own period.
+
+Verified against all six hand-entered league-seasons. 2023-24 and 2024-25
+reproduce **exactly**; 2025-26's four leagues differ only in period 1 starting
+2025-10-20 rather than 2025-10-21 — a date with no NBA games, so nothing it
+contains changes. Three of the six group several weeks into a period, so the
+mapping is genuinely exercised rather than just the 1:1 case.
+
+**On the Monday anchor.** No rule fits the openers themselves: 2023-24 and
+2024-25 both began their week on the Monday *before* the opener, while 2025-26
+began on the opener, a Tuesday. Anchoring on the Monday is right for two of three
+outright and inert for the third, which is what makes the whole table derivable
+with no hand-entered facts at all.
+
+Generated for all seven league-seasons that have `nba.key_dates` coverage.
+2024-25 league 1966813226 gained its missing 24 rows, which took
+`league_schedule_vw` for that season from 240 rows to 432 — the league had been
+invisible in it.
+
+**2026-27 needs one thing: an `nba.key_dates` row** (Regular Season, and All Star
+for the double-week). The handler raises rather than writing an empty frame, and
+`get_league_matchup_dates` dispatches BEFORE deleting, so a missing key date
+leaves the existing rows alone instead of wiping a league out of the view.
+
 ## league_matchup and league_byes are now complements
 
 `get_league_matchup` took its period from the POSITION of an entry in

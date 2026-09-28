@@ -54,3 +54,6 @@ class FtyHandler:
 
     def get_league_byes(self, con) -> pl.DataFrame:
         raise NotImplementedError
+
+    def get_league_matchup_dates(self, con) -> pl.DataFrame:
+        raise NotImplementedError

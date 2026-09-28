@@ -242,6 +242,24 @@ class FtyComponent:
         self.db.write(df, "league_matchup", schema=self.schema)
         logger.info(f"{self.schema}.league_matchup has been updated (%d rows)", len(df))
 
+    def get_league_matchup_dates(self):
+        """
+        Derive each connected league's matchup period dates.
+
+        Dispatches BEFORE deleting, unlike the other methods here. The handler
+        raises when nba.key_dates has no opener for the season, and deleting
+        first would leave the league with no dates at all — which silently
+        removes it from league_schedule_vw, since that view joins them.
+        """
+        if not self.leagues:
+            logger.warning("No leagues connected — skipping get_league_matchup_dates")
+            return
+
+        df = pl.concat(self._dispatch("get_league_matchup_dates"))
+        self._delete_connected("league_matchup_dates")
+        self.db.write(df, "league_matchup_dates", schema=self.schema)
+        logger.info(f"{self.schema}.league_matchup_dates has been updated (%d rows)", len(df))
+
     def get_recent_activity(self):
         df = pl.concat(self._dispatch("get_recent_activity"))
         self.db.write(df, "recent_activity", schema=self.schema)

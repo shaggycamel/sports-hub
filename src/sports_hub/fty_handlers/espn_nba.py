@@ -442,6 +442,87 @@ class EspnNbaHandler(FtyHandler):
             },
         )
 
+    def get_league_matchup_dates(self, con) -> pl.DataFrame:
+        """
+        Start and end dates for every matchup period, derived rather than entered.
+
+        Two inputs, both already available:
+
+        1. A season-level week grid. Week 1 begins on the MONDAY of the week
+           containing the regular-season opener (nba.key_dates), and every week
+           runs Monday to Sunday. The week containing the All-Star break absorbs
+           the one after it, giving a 14-day period.
+        2. This league's own `settings.scheduleSettings.matchupPeriods`, which
+           maps each matchup period to a list of weeks. That is where per-league
+           differences live: in 2025-26 league 95537 groups its playoff rounds as
+           [18, 19] and [20, 21] while 24608 plays each week as its own period.
+           A period's start is its first week's start, its end its last week's
+           end.
+
+        Anchoring week 1 on the Monday rather than on the opener itself is
+        deliberate. No single rule fits the openers — 2023-24 and 2024-25 both
+        began their week on the Monday BEFORE the opener, while 2025-26 began on
+        the opener, a Tuesday — and the Monday form is right for two of the three
+        outright. For 2025-26 it moves period 1's start back one day to
+        2025-10-20, a date with no NBA games at all, so nothing it contains
+        changes.
+
+        Verified against the six hand-entered league-seasons: 2023-24 and 2024-25
+        reproduce exactly, and 2025-26's four leagues differ only in that one
+        inert day. Three of the six group several weeks into a period, so the
+        mapping is exercised, not just the 1:1 case.
+        """
+        key_dates = self.db.read(
+            "SELECT season_type, begin_date FROM nba.key_dates "
+            f"WHERE season = '{con.season}'"
+        )
+        dates = {r["season_type"]: r["begin_date"] for r in key_dates.iter_rows(named=True)}
+
+        if "Regular Season" not in dates:
+            # Without an opener there is no grid to build. Raising beats writing
+            # an empty frame, because the caller deletes the league's existing
+            # rows around this call.
+            raise ValueError(
+                f"nba.key_dates has no 'Regular Season' row for {con.season} — "
+                "add it before deriving matchup dates"
+            )
+
+        opener, all_star = dates["Regular Season"], dates.get("All Star")
+
+        settings = con.espn_request.get_league()["settings"]["scheduleSettings"]
+        periods = {int(k): v for k, v in settings["matchupPeriods"].items()}
+
+        week_start = opener - dt.timedelta(days=opener.weekday())
+        grid = {}
+        for week in range(1, max(max(v) for v in periods.values()) + 1):
+            week_end = week_start + dt.timedelta(days=6 - week_start.weekday())
+            if all_star and week_start <= all_star <= week_end:
+                week_end += dt.timedelta(days=7)
+            grid[week] = (week_start, week_end)
+            week_start = week_end + dt.timedelta(days=1)
+
+        return pl.DataFrame(
+            [
+                {
+                    "season": con.season,
+                    "platform": self.NAME,
+                    "league_id": con.league_id,
+                    "matchup_period": period,
+                    "matchup_start": grid[min(weeks)][0],
+                    "matchup_end": grid[max(weeks)][1],
+                }
+                for period, weeks in sorted(periods.items())
+            ],
+            schema={
+                "season": pl.String,
+                "platform": pl.String,
+                "league_id": pl.Int64,
+                "matchup_period": pl.Int64,
+                "matchup_start": pl.Date,
+                "matchup_end": pl.Date,
+            },
+        )
+
     def get_league_byes(self, con) -> pl.DataFrame:
         """
         Periods where a competitor has no opponent, taken from ESPN's own
