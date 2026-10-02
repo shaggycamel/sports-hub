@@ -9,12 +9,17 @@ logger = logging.getLogger(__name__)
 
 class FtyComponent:
     """
-    Fantasy platform integration — writes into the fty.* schema.
+    Fantasy platform integration — writes into the schema named by `schema`
+    (default "fty"; pass "fty_dev" to target the redesign).
+
+    Credentials come from the same schema as everything else — customer_platform
+    is replicated into each working schema — so a schema is self-contained and
+    can stand in for fty wholesale.
 
     Connections are scoped per LEAGUE, not per customer: multiple customers
     can belong to the same league, and fetching that league's data once
     (rather than once per customer) avoids redundant API calls. Customer
-    attribution is a separate join against fty.customer_league downstream,
+    attribution is a separate join against customer_league downstream,
     not something this component filters by.
 
     Each (sport, platform) combination has its own handler (see
@@ -25,16 +30,17 @@ class FtyComponent:
     handler (see FtyHandler.connect), not read from Context — Context only
     holds things genuinely generic across every sport/platform.
 
-    NOTE: assumes fty.league has a `sport` column so leagues can be routed
+    NOTE: assumes league has a `sport` column so leagues can be routed
     to the right handler. The original schema this was ported from was
     NBA-only and didn't have one — add it before running this for real.
     """
 
-    def __init__(self, db, ctx, sport: str, leagues: pl.DataFrame):
+    def __init__(self, db, ctx, sport: str, leagues: pl.DataFrame, schema: str = "fty"):
         self.db = db
         self.ctx = ctx
         self.sport = sport
-        self.handlers = {key: cls(db) for key, cls in HANDLERS.items()}
+        self.schema = schema
+        self.handlers = {key: cls(db, schema) for key, cls in HANDLERS.items()}
         self.leagues = self._connect_leagues(leagues)
 
     def connect_leagues(self, leagues: pl.DataFrame | None = None, season: str | None = None) -> None:
@@ -64,9 +70,9 @@ class FtyComponent:
         one league and it only needs connecting once.
         """
         return self.db.read(
-            "SELECT DISTINCT cl.platform, cl.league_id, cp.credentials "
-            "FROM fty.customer_league cl "
-            "JOIN fty.customer_platform cp "
+            "SELECT DISTINCT cl.season, cl.platform, cl.league_id, cp.credentials "
+            f"FROM {self.schema}.customer_league cl "
+            f"JOIN {self.schema}.customer_platform cp "
             "  ON cp.customer_id = cl.customer_id AND cp.platform = cl.platform "
             f"WHERE cl.season = '{season}'"
         )
@@ -78,6 +84,15 @@ class FtyComponent:
         if sport == "nba":
             return self.ctx.cur_season_year
         raise NotImplementedError(f"No season source configured for sport '{sport}'")
+
+    @staticmethod
+    def _season_year_from(season: str) -> int:
+        """
+        Opening year of a "YYYY-YY" season label, matching Context's convention.
+        Kept separate from _season_year_for, which answers the different question
+        of which season is current for a sport.
+        """
+        return int(str(season)[:4])
 
     def _connect_leagues(self, leagues: pl.DataFrame) -> dict:
         """
@@ -117,7 +132,20 @@ class FtyComponent:
                 logger.warning("No handler registered for %s (league %s) — skipping", key, league_id)
                 continue
 
-            season_year = self._season_year_for(self.sport)
+            # The row's own season wins, so a league registered for 2023-24
+            # connects to 2023-24. Before this, season_year came only from
+            # _season_year_for (i.e. ctx.cur_season_year), which meant
+            # connect_leagues(season=...) chose WHICH leagues to connect but
+            # still connected every one of them to the current season — the
+            # returned con was stamped con.season = ctx.cur_season and ESPN
+            # reported seasonId for the current year regardless of what was
+            # asked for. Harmless in the daily path, but it made any backfill of
+            # an earlier season silently a no-op.
+            row_season = row.get("season")
+            season_year = (
+                self._season_year_from(row_season) if row_season
+                else self._season_year_for(self.sport)
+            )
             context = {**row_creds, "league_id": league_id, "cur_year": season_year}
 
             section = platform.lower() + "_api"
@@ -136,80 +164,114 @@ class FtyComponent:
     def _dispatch(self, method_name: str) -> list:
         dfs = []
         for (sport, platform, league_id), con in self.leagues.items():
-            logger.info("%s;%s fty.%s", platform, league_id, method_name)
+            logger.info(f"%s;%s {self.schema}.%s", platform, league_id, method_name)
             handler = self.handlers[(sport, platform)]
             dfs.append(getattr(handler, method_name)(con))
         return dfs
+
+    def _delete_connected(self, table: str) -> None:
+        """
+        Clear exactly the (season, league_id) pairs currently connected, before
+        the dispatch methods rewrite them.
+
+        These deletes used to read `season = ctx.cur_season AND league_id IN
+        (...)`, which was harmless only because every connection was built
+        against the current season regardless of what was asked for. Now that a
+        league connects at its own season, that form would delete the CURRENT
+        season's rows and insert another season's in their place. Scoping to the
+        connections' own seasons is what makes a per-season rerun safe.
+        """
+        pairs = ", ".join(
+            f"('{con.season}', {league_id})"
+            for (_sport, _platform, league_id), con in self.leagues.items()
+        )
+        if not pairs:
+            return
+
+        self.db.execute(
+            f"DELETE FROM {self.schema}.{table} WHERE (season, league_id) IN ({pairs})"
+        )
 
     def get_league(self):
         if not self.leagues:
             logger.warning("No leagues connected — skipping get_league")
             return
 
-        self.db.execute(
-            f"DELETE FROM fty.league "
-            f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
-        )
+        self._delete_connected("league")
         df = pl.concat(self._dispatch("get_league"))
-        self.db.write(df, "league", schema="fty")
-        logger.info("fty.league has been updated (%d rows)", len(df))
+        self.db.write(df, "league", schema=self.schema)
+        logger.info(f"{self.schema}.league has been updated (%d rows)", len(df))
 
     def get_league_categories(self):
         if not self.leagues:
             logger.warning("No leagues connected — skipping get_league_categories")
             return
 
-        self.db.execute(
-            f"DELETE FROM fty.league_categories "
-            f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
-        )
+        self._delete_connected("league_categories")
         df = pl.concat(self._dispatch("get_league_categories"))
-        self.db.write(df, "league_categories", schema="fty")
-        logger.info("fty.league_categories has been updated (%d rows)", len(df))
+        self.db.write(df, "league_categories", schema=self.schema)
+        logger.info(f"{self.schema}.league_categories has been updated (%d rows)", len(df))
 
     def get_free_agents(self):
         if not self.leagues:
             logger.warning("No leagues connected — skipping get_free_agents")
             return
 
-        self.db.execute(
-            f"DELETE FROM fty.free_agents "
-            f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
-        )
+        self._delete_connected("free_agents")
         df = pl.concat(self._dispatch("get_free_agents"))
-        self.db.write(df, "free_agents", schema="fty")
-        logger.info("fty.free_agents has been updated (%d rows)", len(df))
+        self.db.write(df, "free_agents", schema=self.schema)
+        logger.info(f"{self.schema}.free_agents has been updated (%d rows)", len(df))
 
     def get_league_competitor(self):
         if not self.leagues:
             logger.warning("No leagues connected — skipping get_league_competitor")
             return
 
-        self.db.execute(
-            f"DELETE FROM fty.league_competitor "
-            f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
-        )
+        self._delete_connected("league_competitor")
         df = pl.concat(self._dispatch("get_league_competitor"))
-        self.db.write(df, "league_competitor", schema="fty")
-        logger.info("fty.league_competitor has been updated (%d rows)", len(df))
+        self.db.write(df, "league_competitor", schema=self.schema)
+        logger.info(f"{self.schema}.league_competitor has been updated (%d rows)", len(df))
 
     def get_league_matchup(self):
         if not self.leagues:
             logger.warning("No leagues connected — skipping get_league_matchup")
             return
 
-        self.db.execute(
-            "DELETE FROM fty.league_matchup "
-            f"WHERE season = '{self.ctx.cur_season}' AND league_id IN ({self.league_ids})"
-        )
+        self._delete_connected("league_matchup")
         df = pl.concat(self._dispatch("get_league_matchup"))
-        self.db.write(df, "league_matchup", schema="fty")
-        logger.info("fty.league_matchup has been updated (%d rows)", len(df))
+        self.db.write(df, "league_matchup", schema=self.schema)
+        logger.info(f"{self.schema}.league_matchup has been updated (%d rows)", len(df))
+
+    def get_league_matchup_dates(self):
+        """
+        Derive matchup period dates for the connected leagues.
+
+        Works from self.leagues like its neighbours, so the season comes from
+        connect_leagues: no argument for the current season at season start, or
+        connect_leagues(season="2023-24") first to backfill an earlier one.
+
+        Derived once per season rather than daily, so it has no
+        util.update_schedule row — like `league`, `league_categories` and
+        `league_competitor`.
+
+        Dispatches BEFORE deleting, unlike the methods above. The handler raises
+        when nba.key_dates has no opener for the season, and deleting first would
+        leave the league with no dates at all — which silently removes it from
+        league_schedule_vw, since that view joins them.
+        """
+        if not self.leagues:
+            logger.warning("No leagues connected — skipping get_league_matchup_dates")
+            return
+
+        df = pl.concat(self._dispatch("get_league_matchup_dates"))
+        self._delete_connected("league_matchup_dates")
+        self.db.write(df, "league_matchup_dates", schema=self.schema)
+        logger.info(f"{self.schema}.league_matchup_dates has been updated (%d rows)", len(df))
 
     def get_recent_activity(self):
         df = pl.concat(self._dispatch("get_recent_activity"))
-        self.db.write(df, "recent_activity", schema="fty")
-        logger.info("fty.recent_activity has been updated (%d rows)", len(df))
+        self.db.write(df, "recent_activity", schema=self.schema)
+        logger.info(f"{self.schema}.recent_activity has been updated (%d rows)", len(df))
 
     def get_competitor_roster(self):
         if not self.leagues:
@@ -218,12 +280,12 @@ class FtyComponent:
 
         df_mup = self.db.read(
             "SELECT * "
-            "FROM fty.league_matchup_dates "
+            f"FROM {self.schema}.league_matchup_dates "
             f"WHERE '{self.ctx.date_est}' BETWEEN matchup_start AND matchup_end",
         )
 
         self.db.execute(
-            "DELETE FROM fty.competitor_roster "
+            f"DELETE FROM {self.schema}.competitor_roster "
             f"WHERE assigned_date = '{self.ctx.date_est}' AND league_id IN ({self.league_ids})",
         )
 
@@ -233,9 +295,9 @@ class FtyComponent:
             .join(df_mup, on=["platform", "league_id"], how="left")
         )
 
-        self.db.write_ordered(df, "competitor_roster", schema="fty")
+        self.db.write_ordered(df, "competitor_roster", schema=self.schema)
 
-    def get_matchup_box_score(self):
+    def get_matchup_box_score(self, matchup_period: int | None = None):
         # Kept per-league (not batched into one _dispatch call) since leagues
         # can be on different matchup periods — matches the original
         # method's own comment about why this stays league-specific.
@@ -244,22 +306,97 @@ class FtyComponent:
             return
 
         for (sport, platform, league_id), con in self.leagues.items():
-            logger.info("%s;%s fty.matchup_box_score", platform, league_id)
+            logger.info(f"%s;%s {self.schema}.matchup_box_score", platform, league_id)
             handler = self.handlers[(sport, platform)]
-            df = handler.get_matchup_box_score(con)
+            df = handler.get_matchup_box_score(con, matchup_period)
 
             if df.is_empty():
-                logger.info("%s;%s fty.matchup_box_score: nothing returned — skipped", platform, league_id)
+                logger.info(f"%s;%s {self.schema}.matchup_box_score: nothing returned — skipped", platform, league_id)
                 continue
 
             self.db.execute(
-                "DELETE FROM fty.matchup_box_score "
+                f"DELETE FROM {self.schema}.matchup_box_score "
                 f"WHERE season = '{con.season}' "
                 f"AND platform = '{platform}' AND league_id = {league_id} "
                 f"AND matchup = {df['matchup'][0]}",
             )
-            self.db.write(df, "matchup_box_score", schema="fty")
-            logger.info("%s;%s fty.matchup_box_score has been updated (%d rows)", platform, league_id, len(df))
+            self.db.write(df, "matchup_box_score", schema=self.schema)
+            logger.info(f"%s;%s {self.schema}.matchup_box_score has been updated (%d rows)", platform, league_id, len(df))
+
+    def get_matchup_result(self, matchup_period: int | None = None):
+        """
+        The outcome of the current matchup period, one row per competitor.
+
+        Kept per-league rather than batched for the same reason as
+        get_matchup_box_score: leagues can be on different matchup periods, so
+        the delete has to be scoped to the period each league actually returned.
+        """
+        if not self.leagues:
+            logger.warning("No leagues connected — skipping get_matchup_result")
+            return
+
+        for (sport, platform, league_id), con in self.leagues.items():
+            logger.info(f"%s;%s {self.schema}.matchup_result", platform, league_id)
+            handler = self.handlers[(sport, platform)]
+            df = handler.get_matchup_result(con, matchup_period)
+
+            if df.is_empty():
+                logger.info(f"%s;%s {self.schema}.matchup_result: nothing returned — skipped", platform, league_id)
+                continue
+
+            self.db.execute(
+                f"DELETE FROM {self.schema}.matchup_result "
+                f"WHERE season = '{con.season}' "
+                f"AND platform = '{platform}' AND league_id = {league_id} "
+                f"AND matchup = {df['matchup'][0]}",
+            )
+            self.db.write(df, "matchup_result", schema=self.schema)
+            logger.info(f"%s;%s {self.schema}.matchup_result has been updated (%d rows)", platform, league_id, len(df))
+
+    def backfill_matchups(self, periods=None) -> None:
+        """
+        Refetch box scores and results for every matchup period a league has
+        played, rather than only the current one.
+
+        Needed because both per-period methods default to
+        con.currentMatchupPeriod, so a new table starts out holding one period
+        per league and nothing historical. The period list comes from each
+        league's own con.matchup_ids, capped at its current period — periods
+        beyond that have no games played, and ESPN returns an undecided shell
+        for them rather than an error, which would otherwise write empty rows.
+
+        Periods that come back empty are skipped rather than deleted, so a
+        league with a bye or an unplayed period keeps whatever it already has.
+
+        con.matchup_ids comes back empty for some older seasons (2023-24 ESPN,
+        for one), so currentMatchupPeriod is the fallback — it is populated even
+        when the id map is not.
+        """
+        if not self.leagues:
+            logger.warning("No leagues connected — skipping backfill_matchups")
+            return
+
+        for (sport, platform, league_id), con in self.leagues.items():
+            available = periods or sorted(
+                p for p in con.matchup_ids if p <= con.currentMatchupPeriod
+            ) or list(range(1, con.currentMatchupPeriod + 1))
+            logger.info(
+                "%s;%s backfilling matchups %s-%s", platform, league_id,
+                min(available, default=0), max(available, default=0),
+            )
+            for matchup_period in available:
+                for table in ("matchup_box_score", "matchup_result"):
+                    handler = self.handlers[(sport, platform)]
+                    df = getattr(handler, f"get_{table}")(con, matchup_period)
+                    if df.is_empty():
+                        continue
+                    self.db.execute(
+                        f"DELETE FROM {self.schema}.{table} "
+                        f"WHERE season = '{con.season}' AND platform = '{platform}' "
+                        f"AND league_id = {league_id} AND matchup = {matchup_period}",
+                    )
+                    self.db.write(df, table, schema=self.schema)
+            logger.info("%s;%s backfill complete", platform, league_id)
 
     def get_league_byes(self):
         if not self.leagues:
@@ -267,14 +404,14 @@ class FtyComponent:
             return
 
         for (sport, platform, league_id), con in self.leagues.items():
-            logger.info("%s;%s fty.league_byes", platform, league_id)
+            logger.info(f"%s;%s {self.schema}.league_byes", platform, league_id)
             handler = self.handlers[(sport, platform)]
             df = handler.get_league_byes(con)
 
             self.db.execute(
-                "DELETE FROM fty.league_byes "
+                f"DELETE FROM {self.schema}.league_byes "
                 f"WHERE season = '{con.season}' "
                 f"AND platform = '{platform}' AND league_id = {league_id}"
             )
-            self.db.write(df, "league_byes", schema="fty")
-            logger.info("%s;%s fty.league_byes has been updated (%d rows)", platform, league_id, len(df))
+            self.db.write(df, "league_byes", schema=self.schema)
+            logger.info(f"%s;%s {self.schema}.league_byes has been updated (%d rows)", platform, league_id, len(df))

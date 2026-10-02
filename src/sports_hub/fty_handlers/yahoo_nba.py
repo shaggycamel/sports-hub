@@ -183,11 +183,11 @@ class YahooNbaHandler(FtyHandler):
                     )
 
         df_already_done = self.db.read(
-            f"SELECT * FROM fty.recent_activity WHERE season = '{con.season}' AND platform = 'Yahoo' AND league_id = {con.league_id}",
+            f"SELECT * FROM {self.schema}.recent_activity WHERE season = '{con.season}' AND platform = 'Yahoo' AND league_id = {con.league_id}",
         )
         return pl.DataFrame(dfs).join(df_already_done, on=df_already_done.columns, how="anti")
 
-    def get_matchup_box_score(self, con) -> pl.DataFrame:
+    def get_matchup_box_score(self, con, matchup_period: int | None = None) -> pl.DataFrame:
         # Not implemented for Yahoo. The query this was built on read
         # fty.league_schedule, which no longer exists. Returning nothing lets the
         # caller skip this league instead of failing the whole run.
