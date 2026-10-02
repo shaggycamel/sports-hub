@@ -237,7 +237,7 @@ class NBAComponent:
     def get_player_box_score(self):
         bs_max_dt = (
             self.db.read(
-                "select max(game_date) from nba.nba_player_box_score_vw where min is not null",
+                "select max(game_date) from nba.player_box_score_vw where min is not null",
 
             )
             .item()
@@ -333,7 +333,7 @@ class NBAComponent:
     def get_team_box_score(self):
         bs_max_dt = (
             self.db.read(
-                "select max(game_date) from nba.nba_team_box_score_vw where min is not null",
+                "select max(game_date) from nba.team_box_score_vw where min is not null",
 
             )
             .item()
