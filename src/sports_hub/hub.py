@@ -23,7 +23,7 @@ class SportsHub:
         hub.util.conform_player_ids()   # resolve any new player ids
     """
 
-    def __init__(self, ini_path: str | None = None, db_con: str | None = None, sport: str = "nba", leagues: pl.DataFrame | None = None):
+    def __init__(self, db_con: str | None = None, sport: str = "nba", leagues: pl.DataFrame | None = None, ini_path: str | None = None):
         # Components log progress and row counts at INFO. Python drops INFO when
         # nothing has configured logging, which is why a plain script sees silence.
         # basicConfig is a no-op if handlers already exist, so a caller's own
@@ -36,7 +36,7 @@ class SportsHub:
         )
         logging.getLogger("sports_hub").setLevel(logging.INFO)
 
-        self.db = Database(ini_path, db_con)
+        self.db = Database(db_con, ini_path)
         self.ctx = Context(self.db)
         self.sport = sport
 

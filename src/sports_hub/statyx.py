@@ -15,7 +15,7 @@ class StatyxComponent:
     def __init__(self, db, ctx, sport: str = "nba"):
         self.db = db
         self.ctx = ctx
-        self.pipeline = StatyxPipeline(sport=sport, config_path=db.ini_path)
+        self.pipeline = StatyxPipeline(sport=sport, ini_path=db.ini_path)
 
     def _incremental(self, table: str, season: str, params: dict) -> dict:
         """

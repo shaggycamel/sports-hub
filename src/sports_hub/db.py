@@ -1,8 +1,9 @@
-import os
 import logging
 import configparser
 import sqlalchemy
 import polars as pl
+
+from sports_hub.config import credentials_path, ensure_credentials_file
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +17,8 @@ class Database:
     object rather than opening its own connections.
     """
 
-    def __init__(self, ini_path: str | None = None, db_con: str | None = None):
-        self.ini_path = ini_path or os.path.join(os.getcwd(), "credentials.ini")
+    def __init__(self, db_con: str | None = None, ini_path: str | None = None):
+        self.ini_path = credentials_path(ini_path)
         self.engine: sqlalchemy.Engine | None = None
         if db_con:
             self.connect(db_con)
@@ -29,10 +30,14 @@ class Database:
 
     def connect(self, db_con: str) -> None:
         """Build and store the engine for a credentials.ini section."""
+        ensure_credentials_file(self.ini_path)
         parser = configparser.ConfigParser()
         parser.read(self.ini_path)
         if not parser.has_section(db_con):
-            raise ValueError(f"No [{db_con}] section found in {self.ini_path}")
+            raise ValueError(
+                f"No [{db_con}] section in {self.ini_path} "
+                f"(found: {parser.sections()})"
+            )
 
         db_creds = dict(parser.items(db_con))
         sql_url = "dialect://user:password@host:port/database"

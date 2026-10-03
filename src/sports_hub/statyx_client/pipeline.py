@@ -2,15 +2,19 @@ import os
 import configparser
 import polars as pl
 
+from sports_hub.config import credentials_path, ensure_credentials_file
 from sports_hub.statyx_client._async import run_coro
 from sports_hub.statyx_client._client import StatyxClient
 from sports_hub.statyx_client.endpoints import BASE_URLS, ENDPOINTS
 
 
-def _load_api_key(api_key: str | None, config_path: str | None) -> str:
+def _load_api_key(api_key: str | None, ini_path: str | None) -> str:
     """
     Resolution order: explicit api_key arg > STATYX_API_KEY env var >
-    credentials.ini (section [statyx], key 'key') at config_path or cwd.
+    credentials.ini (section [statyx], key 'key') at `ini_path` or the
+    default ~/.config/sports-hub-credentials.ini. `ini_path` is resolved via
+    config.credentials_path, so SPORTS_HUB_CREDENTIALS can point at a mounted
+    file instead (containers/CI).
     Matches the credential pattern already used elsewhere (e.g. dataHub's
     _db_connect), so a project's existing credentials.ini keeps working as-is.
     """
@@ -20,7 +24,8 @@ def _load_api_key(api_key: str | None, config_path: str | None) -> str:
     if env_key := os.environ.get("STATYX_API_KEY"):
         return env_key
 
-    ini_path = config_path or os.path.join(os.getcwd(), "credentials.ini")
+    ini_path = credentials_path(ini_path)
+    ensure_credentials_file(ini_path)
     parser = configparser.ConfigParser()
     parser.read(ini_path)
     if not parser.has_section("statyx"):
@@ -45,14 +50,14 @@ class StatyxPipeline:
         self,
         sport: str = "nba",
         api_key: str | None = None,
-        config_path: str | None = None,
+        ini_path: str | None = None,
         max_concurrent: int = 5,
     ):
         if sport not in self.BASE_URLS:
             raise ValueError(f"Unknown sport '{sport}'. Options: {list(self.BASE_URLS)}")
 
         self.sport = sport
-        self.api_key = _load_api_key(api_key, config_path)
+        self.api_key = _load_api_key(api_key, ini_path)
         self.base_url = self.BASE_URLS[sport]
         self.endpoints = self.ENDPOINTS[sport]
         self.max_concurrent = max_concurrent
