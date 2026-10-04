@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class FtyComponent:
     """
     Fantasy platform integration — writes into the schema named by `schema`
-    (default "fty"; pass "fty_dev" to target the redesign).
+    (default "fty", the only fantasy schema since the fty_dev promotion).
 
     Credentials come from the same schema as everything else — customer_platform
     is replicated into each working schema — so a schema is self-contained and

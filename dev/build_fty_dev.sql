@@ -1,3 +1,12 @@
+-- !! HISTORICAL — DO NOT RUN AS-IS !!
+-- fty_dev no longer exists: on 2026-10-04 it was promoted to `fty` and the old fty was
+-- dropped. Running this would build a parallel fty_dev from the current fty, carrying the
+-- schema and view names it had BEFORE that promotion; the three views it defines
+-- (fty_categories_vw, matchup_category_vw, fty_matchup_box_score_vw) do not match the nine
+-- views that now live in fty. The system of record for views is
+-- ~/git/nba_cockroach_db/sql/views/, applied with that repo's scripts/apply_views.py.
+-- Kept for the design history only.
+--
 -- fty_dev: working schema for the points-league redesign.
 -- Source is fty, which is never written to. ESPN only; Yahoo is excluded.
 -- Credentials (fty.customer_platform) are deliberately NOT copied — dev code
