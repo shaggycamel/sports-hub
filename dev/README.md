@@ -614,8 +614,10 @@ merges are not yet applied.
   table — deleting every espn mapping and re-resolving lost 23 of them and
   minted 21 spurious players. **So back up `player_source_id`; the retired table
   is a convenience, not the system of record.**
-- `utility.deduplicate_tables` is still dead code: it takes a `db_con` with
-  `.db_con` and `.cur_season`, attributes from the pre-split god-object.
+- `utility.deduplicate_tables` is unused but not broken: its body correctly
+  reads `self.db` / `self.ctx.cur_season`. Kept as a self-contained utility;
+  the earlier note calling it pre-split god-object code no longer applied once
+  the components were separated.
 
 ## league_byes: fixed and backfilled for every ESPN league-season
 
