@@ -9,16 +9,12 @@ SELECT platform, count(*) AS unresolved
 FROM util.unmatched_player_source_vw
 GROUP BY 1 ORDER BY 1;
 
--- 2. INTEGRITY CHECKS — all three should return 0. Worth running after any
--- resolve or manual edit.
-SELECT
-  (SELECT count(*) FROM util.player p
-     WHERE NOT EXISTS (SELECT 1 FROM util.player_source_id m
-                       WHERE m.player_key = p.player_key))            AS players_owning_nothing,
-  (SELECT count(*) FROM util.unmatched_player_source_vw)              AS backlog,
-  (SELECT count(*) FROM (
-      SELECT util.norm_name(conformed_name) nm FROM util.player
-      GROUP BY 1 HAVING count(*) > 1) x)                              AS colliding_names;
+-- 2. INTEGRITY CHECKS — every check must report 0 failures. Worth running after
+-- any resolve, apply or manual edit. In Python (hub.util.check_player_identity())
+-- for all three; this view (dev/build_player_identity_check.sql) carries the two
+-- a portable query can compute.
+SELECT * FROM util.player_identity_check WHERE failures > 0;   -- want no rows
+-- hub.util.check_player_identity()   # same, plus colliding_names (NFKD fold)
 
 -- 3. WHAT DID THE MATCHER INVENT? Review queue. Most are legitimate — the box
 -- scores reach back to 2009-10 and statyx carries college prospects — so this is
@@ -33,12 +29,15 @@ HAVING NOT bool_or(m.platform = 'nba')   -- no nba id is the split signature
 ORDER BY 2;
 
 -- 4. FIND SPLITS THE MATCHER CANNOT: pairs differing only by a generational
--- suffix, which util.norm_name deliberately does NOT strip. Read every result
+-- suffix, which the fold deliberately does NOT strip. Read every result
 -- before acting — "Jameer Nelson" and "Jameer Nelson Jr." are father and son,
--- and automating this rule would merge them.
+-- and automating this rule would merge them. The fold itself is Python
+-- (UtilComponent.norm_name); this SQL approximation only needs the trailing
+-- suffix, so lower + strip punctuation is enough for a human review.
 WITH s AS (
     SELECT player_key, conformed_name,
-           regexp_replace(util.norm_name(conformed_name), '(jr|sr|ii|iii|iv)$', '') AS stem
+           regexp_replace(lower(regexp_replace(conformed_name, '[^a-zA-Z]', '', 'g')),
+                          '(jr|sr|ii|iii|iv)$', '') AS stem
     FROM util.player
 )
 SELECT stem, string_agg(conformed_name, '  vs  ' ORDER BY conformed_name) AS pair
@@ -72,7 +71,7 @@ ROLLBACK;  -- change to COMMIT once check (2) is clean
 -- Explicitly NOT a merge: Jameer Nelson (nba 2749) / Jameer Nelson Jr. (statyx).
 
 -- 6. CORRECT A DISPLAY NAME. conformed_name is the only field a human owns; no
--- job overwrites it. Matching happens on util.norm_name, so a cosmetic fix here
+-- job overwrites it. Matching happens on norm_name() (Python), so a cosmetic fix here
 -- cannot break an existing mapping — but changing it to a DIFFERENT person's
 -- normalised name would, so re-run check (2).
 UPDATE util.player SET conformed_name = 'A.J. Lawson', needs_review = false

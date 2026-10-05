@@ -471,8 +471,20 @@ visible rather than silent.
 "Egor Dëmin" is espn's "Egor Demin"; espn's "P.J. Hairston" is nba's "PJ
 Hairston"; `nba.team_roster` carries "Norris  Cole" with a double space. Matching
 raw strings recreated the split it was meant to end — a first pass produced 20
-duplicated players. Hence `util.norm_name()` (casefold, strip accents, strip
-non-alpha, IMMUTABLE so it can be indexed), which every match goes through.
+duplicated players. Hence `norm_name()`, which every match goes through.
+
+> **The fold is Python now, not SQL.** `util.norm_name` (a `translate()` list
+> plus `regexp_replace`) was replaced by `UtilComponent.norm_name` in
+> `src/sports_hub/utility.py`. The SQL version silently DELETED any diacritic it
+> did not name (`ć ā đ ņ Ş ū …`), so "Boban Marjanović" folded to `bobanmarjanovi`
+> against espn's `bobanmarjanovic` and split the player. The Python version uses
+> `unicodedata.normalize('NFKD')`, which needs no list, and folds the letters
+> NFKD does not decompose (`ø æ đ`) via a small table. Matching moved with it —
+> `conform_player_ids()` now folds in Polars — so the pipeline needs **no
+> user-defined function and runs identically on Postgres and CockroachDB**. The
+> `util.norm_name` function and its functional index `player_norm_name_ix` are
+> dropped. `check_player_identity()` carries the fold-based `colliding_names`
+> check the SQL view cannot; the view keeps the two DB-native checks.
 
 ## The matcher
 
@@ -495,11 +507,12 @@ an id seen late in the old season and not yet resolved. Verified with yahoo 5642
 backlog, where it would have sat forever. The unscoped call resolves it in 5.0s.
 
 
-`hub.util.conform_player_ids()` — two SQL statements, no staging
-table and no upsert. The first mints a player for any unmatched normalised name
-nobody owns; the second attaches every unmatched source id to the player holding
-that name. Re-running is a no-op because the second statement's output is exactly
-what empties the view the first reads.
+`hub.util.conform_player_ids()` — the same two moves, now done in Polars on
+`norm_name()` rather than in SQL joins: mint a player for any unmatched norm
+nobody owns, then attach every unmatched id to the player holding that norm.
+No staging table and no upsert. Re-running is a no-op because the attach is what
+empties the view the mint reads. Doing it in Python is what removed the
+`util.norm_name` UDF the SQL joins depended on, and with it the accent bug.
 
 Matching is normalised-exact, **never fuzzy** — fuzzy auto-linking is what caused
 the original 30 splits. A name matching more than one player is left unmatched
@@ -771,10 +784,20 @@ data regardless of the season asked for. No corruption:
 ## Files
 
 - `build_fty_dev.sql` — the schema, idempotent
-- `build_player_identity.sql` — `util.norm_name`, the two identity tables, and
-  the seed from `util.conformed_player_id`. **Not idempotent** — it creates the
-  tables; drop them first to re-run
+- `build_player_identity.sql` — the two identity tables (DDL only). **Not
+  idempotent** — drop the tables to re-run. Seeding from
+  `util.conformed_player_id_RETIRED` is now `UtilComponent.build_player_identity()`,
+  in Python so no SQL function is needed
 - `build_player_identity_views.sql` — the directory, activity and backlog views
+- `build_player_identity_review.sql` — `util.player_identity_review`, the staging
+  table for model-proposed corrections. Idempotent (`IF NOT EXISTS`)
+- `seed_player_identity_review.sql` — the hand-audited corrections, re-runnable
+  (`ON CONFLICT DO NOTHING`); reapply after a rebuild
+- `build_player_identity_check.sql` — `util.player_identity_check`, the two
+  DB-native integrity checks as a view (`SELECT * ... WHERE failures > 0` should
+  return no rows). The third, `colliding_names`, is in Python:
+  `UtilComponent.check_player_identity()`
+- `player_identity_ops.sql` — manual recipes for operating the identity tables
 - `one-grain-two-formats.html` — source for the design diagram
 - `superseded/` — earlier drafts, kept for history. **Do not run them:** both
   target `fty` rather than `fty_dev`, and predate the pct, `is_scored` and
