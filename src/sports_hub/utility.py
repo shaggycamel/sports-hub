@@ -476,7 +476,7 @@ class UtilComponent:
             len(key_by_norm), len(rows),
         )
 
-    def review_player_identities(self, origin: str = "backlog", batch_size: int = 20) -> int:
+    def review_player_identities(self, origin: str = "backlog", batch_size: int = 20, limit: int | None = None) -> int:
         """
         Ask the local model to reconcile names the deterministic matcher cannot,
         and write its proposals to util.player_identity_review. Never touches
@@ -504,6 +504,9 @@ class UtilComponent:
         else:
             raise ValueError(f"origin must be 'backlog' or 'audit', got {origin!r}")
 
+        if limit is not None:
+            candidates = candidates.head(limit)
+
         if candidates.is_empty():
             logger.info("review_player_identities(%s): nothing to review", origin)
             return 0
@@ -514,14 +517,21 @@ class UtilComponent:
 
         staged = 0
         for chunk in candidates.iter_slices(batch_size):
+            # The identifying fields come from the candidate row, not the model:
+            # it echoes them unreliably (and omits them when thinking is off) but
+            # only ever needs to answer proposal/target/name/confidence/reason.
+            cand_by_id = {
+                (r["platform"], r["source_id"]): r for r in chunk.iter_rows(named=True)
+            }
             relevant = self._shortlist_players(players, chunk)
             proposals, model = self._ask_ollama(relevant, chunk, origin)
             for p in proposals:
-                hash_input = "|".join(str(p.get(k)) for k in (
-                    origin, p.get("platform"), p.get("source_id"),
-                    p.get("source_name"), p.get("subject_player_key"),
-                ))
-                input_hash = hashlib.sha256(hash_input.encode()).hexdigest()
+                cand = cand_by_id.get((p.get("platform"), p.get("source_id")))
+                if cand is None:
+                    continue
+                input_hash = hashlib.sha256(
+                    f"{origin}|{cand['platform']}|{cand['source_id']}".encode()
+                ).hexdigest()
                 with self.db.engine.begin() as conn:
                     inserted = conn.execute(
                         text(
@@ -538,10 +548,10 @@ class UtilComponent:
                         ),
                         {
                             "origin": origin,
-                            "platform": p.get("platform"),
-                            "source_id": p.get("source_id"),
-                            "source_name": p.get("source_name"),
-                            "subject": p.get("subject_player_key"),
+                            "platform": cand["platform"],
+                            "source_id": cand["source_id"],
+                            "source_name": cand["source_name"],
+                            "subject": cand["subject_player_key"],
                             "proposal": p.get("proposal"),
                             "target": p.get("target_player_key"),
                             "name": p.get("proposed_name"),
@@ -707,7 +717,7 @@ class UtilComponent:
 
     def _ask_ollama(self, players: pl.DataFrame, chunk: pl.DataFrame, origin: str):
         """Send one batch of candidates and the shortlisted players, get JSON back."""
-        host, model, timeout = self._ollama_config()
+        host, model, timeout, think = self._ollama_config()
 
         known = "\n".join(
             f'{r["player_key"]}: {r["conformed_name"]}'
@@ -721,7 +731,7 @@ class UtilComponent:
             "You reconcile sports player names across data platforms. For each "
             "candidate choose exactly one proposal. Never link or merge two "
             "different people; genuine namesakes (e.g. a father and son) stay "
-            "separate. Answer only with JSON."
+            "separate. Answer only with JSON, no commentary."
         )
         user = (
             f"Context: {origin}. Known players as player_key: name\n{known}\n\n"
@@ -732,32 +742,37 @@ class UtilComponent:
             "and target_player_key\n"
             "- new: no existing player -> proposed_name\n"
             "- no_action: leave it alone (a benign alias or already correct)\n"
-            "Give a confidence in [0,1] and a one-line reason."
+            "Confidence in [0,1]; keep each reason under 12 words."
         )
 
-        resp = requests.post(
-            f"{host}/api/chat",
-            json={
-                "model": model,
-                "stream": False,
-                "format": _PROPOSAL_SCHEMA,
-                "options": {"temperature": 0},
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-            },
-            timeout=timeout,
-        )
+        body = {
+            "model": model,
+            "stream": False,
+            "format": _PROPOSAL_SCHEMA,
+            # Reasoning models otherwise emit hundreds of hidden thinking tokens
+            # (glm-4.7-flash: ~850 for three candidates, at ~11 tok/s locally).
+            # Older Ollama builds reject `think`, so fall back without it.
+            "think": think,
+            "options": {"temperature": 0},
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        }
+        resp = requests.post(f"{host}/api/chat", json=body, timeout=timeout)
+        if resp.status_code == 400 and "think" in resp.text.lower():
+            body.pop("think", None)
+            resp = requests.post(f"{host}/api/chat", json=body, timeout=timeout)
         resp.raise_for_status()
         content = resp.json()["message"]["content"]
         return json.loads(content).get("proposals", []), model
 
-    def _ollama_config(self) -> tuple[str, str, int]:
-        """host, model, timeout — env vars win, then an [ollama] credentials section."""
+    def _ollama_config(self) -> tuple[str, str, int, bool]:
+        """host, model, timeout, think — env vars win, then an [ollama] section."""
         host = os.environ.get("OLLAMA_HOST")
         model = os.environ.get("OLLAMA_MODEL")
         timeout = os.environ.get("OLLAMA_TIMEOUT")
+        think = os.environ.get("OLLAMA_THINK")
         if Path(self.db.ini_path).exists():
             parser = configparser.ConfigParser()
             parser.read(self.db.ini_path)
@@ -765,10 +780,12 @@ class UtilComponent:
                 host = host or parser.get("ollama", "host", fallback=None)
                 model = model or parser.get("ollama", "model", fallback=None)
                 timeout = timeout or parser.get("ollama", "timeout", fallback=None)
+                think = think or parser.get("ollama", "think", fallback=None)
         return (
             (host or "http://localhost:11434").rstrip("/"),
             model or "llama3.1",
             int(timeout or 600),
+            str(think).strip().lower() not in ("false", "0", "no") if think is not None else False,
         )
 
     def _link_source_id(self, platform, source_id, source_name, player_key) -> None:
