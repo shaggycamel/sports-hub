@@ -699,6 +699,39 @@ class UtilComponent:
         logger.info("apply_player_identity_reviews: %d proposal(s) applied", applied)
         return applied
 
+    def sync_player_identity(self, review: bool = True, apply: bool = True) -> dict:
+        """
+        One call for the routine, to run after the jobs that write the source
+        tables (daily is right — it is a no-op most days): resolve what the
+        deterministic matcher can, and only if a backlog remains, run the model
+        review and apply. Then report the integrity checks.
+
+        Never destructive on its own: the review only stages, and apply will not
+        merge or rename without a human's status='accepted'. Returns a summary;
+        an empty backlog means the model was not called at all.
+        """
+        self.conform_player_ids()
+
+        backlog = self.db.read(
+            "SELECT count(*) AS n FROM util.unmatched_player_source_vw"
+        ).item()
+
+        staged = 0
+        if review and backlog:
+            staged = self.review_player_identities(origin="backlog")
+
+        applied = self.apply_player_identity_reviews() if apply else 0
+        checks = self.check_player_identity()
+
+        summary = {
+            "backlog": backlog,
+            "staged": staged,
+            "applied": applied,
+            "checks": {r["check_name"]: r["failures"] for r in checks.iter_rows(named=True)},
+        }
+        logger.info("sync_player_identity: %s", summary)
+        return summary
+
     def _audit_candidates(self) -> pl.DataFrame:
         """
         Already-mapped ids that look wrong, for the one-time backfill.

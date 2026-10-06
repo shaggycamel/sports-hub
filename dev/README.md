@@ -561,16 +561,49 @@ nomic-embed-text) cannot produce proposals. `think = false` matters for reasonin
 models: without it a local one spent ~850 hidden tokens per three candidates at
 ~11 tok/s.
 
-## Cadence: no update_schedule row
+## Runbook
 
-`util.update_schedule` has no cadence column and the runner drives everything
-daily (`util.update_log` shows `fty.free_agents` on 460 distinct days), so a row
-would mean daily — far more than this needs. Only 24 players first appeared after
-the 2025-26 pre-season seed.
+One call does the routine, after the jobs that write the source tables:
 
-Instead `util.unmatched_player_source_vw` is the backlog, and the daily jobs that
-write the source tables are already the detector. Non-empty means run
-`hub.util.conform_player_ids()`. Run it at season start; check the view otherwise.
+```python
+hub.util.sync_player_identity()
+# {'backlog': 0, 'staged': 0, 'applied': 0,
+#  'checks': {'players_owning_nothing': 0, 'backlog': 0, 'colliding_names': 0}}
+```
+
+It runs `conform_player_ids()`, and **only if the backlog is non-empty** runs
+`review_player_identities(origin='backlog')`, then `apply_player_identity_reviews()`
+and `check_player_identity()`. Nothing destructive happens on its own: the review
+only stages, and apply will not merge or rename without a human's `status='accepted'`.
+
+**Cadence: daily, right after the source jobs.** It is a no-op most days — the
+deterministic matcher is seconds, and the model is only called when
+`util.unmatched_player_source_vw` is non-empty, which is a few rows a season.
+There is deliberately no `util.update_schedule` row: that table has no cadence
+column and the runner drives everything daily, and the daily jobs are already the
+detector. With `sync_player_identity()` the same is true for the review step.
+
+The one thing a human still does is clear the merge/rename queue when it is not
+empty:
+
+```sql
+-- look
+SELECT review_id, source_name, proposal, target_player_key, reason
+FROM util.player_identity_review WHERE status='pending';
+-- accept the ones you agree with, then
+UPDATE util.player_identity_review SET status='accepted' WHERE review_id IN (...);
+```
+
+`sync_player_identity()` picks accepted rows up on its next run. Reject the rest
+with `status='rejected'`.
+
+One-time (already done on this data): `review_player_identities(origin='audit')`
+to find ids that are *already* mapped but wrong — the backlog cannot see those.
+
+Rebuild from scratch: `build_player_identity.sql` → `build_player_identity()` →
+`build_player_identity_views.sql` → `conform_player_ids()` →
+`seed_player_identity_review.sql` + `apply_player_identity_reviews()` for the
+hand corrections.
 
 ## Verified state
 
