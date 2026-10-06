@@ -540,6 +540,7 @@ class UtilComponent:
         name_by_key = {
             r["player_key"]: r["conformed_name"] for r in players.iter_rows(named=True)
         }
+        owned_norms = {norm_name(n) for n in name_by_key.values()}
 
         staged = 0
         for chunk in candidates.iter_slices(batch_size):
@@ -573,6 +574,17 @@ class UtilComponent:
                     name_by_key.get(cand["subject_player_key"]), name_by_key.get(target)
                 ):
                     continue
+
+                # Self-targets and duplicate-name 'new' are model noise, not
+                # actions: a merge with subject == target would delete the
+                # player, and a 'new' for a name that already exists would mint
+                # a duplicate and steal the id.
+                if proposal in ("link", "merge") and target == cand["subject_player_key"]:
+                    continue
+                if proposal == "new":
+                    proposed_name = p.get("proposed_name")
+                    if not proposed_name or norm_name(proposed_name) in owned_norms:
+                        continue
 
                 input_hash = hashlib.sha256(
                     f"{origin}|{cand['platform']}|{cand['source_id']}".encode()
@@ -644,12 +656,16 @@ class UtilComponent:
                     if r["target_player_key"] is None:
                         continue
                     target = r["target_player_key"]
+                    if target == r["subject_player_key"]:
+                        continue  # already on that player; nothing to do
                     same_name = norm_name(r["source_name"] or "") == norm_name(
                         self._player_name(target)
                     )
                 else:
                     if not r["proposed_name"]:
                         continue
+                    if self._norm_is_owned(r["proposed_name"]):
+                        continue  # a player with that name exists; not 'new'
                     target = self._mint_player(r["proposed_name"])
                     same_name = True
 
@@ -672,6 +688,8 @@ class UtilComponent:
                     continue
                 if r["subject_player_key"] is None or r["target_player_key"] is None:
                     continue
+                if r["subject_player_key"] == r["target_player_key"]:
+                    continue  # a merge needs two distinct players
                 self._merge_players(
                     r["subject_player_key"], r["target_player_key"], r["proposed_name"]
                 )
@@ -868,6 +886,16 @@ class UtilComponent:
                 {"k": player_key},
             ).scalar()
 
+    def _norm_is_owned(self, name: str) -> bool:
+        """Whether any player already folds to this name — i.e. it is not 'new'."""
+        norm = norm_name(name or "")
+        if not norm:
+            return False
+        return any(
+            norm_name(r["conformed_name"]) == norm
+            for r in self.db.read("SELECT conformed_name FROM util.player").iter_rows(named=True)
+        )
+
     def _mint_player(self, name: str, needs_review: bool = True) -> int:
         with self.db.engine.begin() as conn:
             return conn.execute(
@@ -879,6 +907,9 @@ class UtilComponent:
             ).scalar()
 
     def _merge_players(self, subject_key: int, target_key: int, name: str | None = None) -> None:
+        # A self-merge would DELETE the player and orphan its mappings.
+        if subject_key == target_key:
+            return
         with self.db.engine.begin() as conn:
             conn.execute(
                 text("UPDATE util.player_source_id SET player_key = :t "
