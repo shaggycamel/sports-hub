@@ -46,7 +46,14 @@ _PROPOSAL_SCHEMA = {
                     "confidence": {"type": "number"},
                     "reason": {"type": "string"},
                 },
-                "required": ["platform", "source_id", "proposal", "confidence"],
+                "required": [
+                    "platform",
+                    "source_id",
+                    "proposal",
+                    "confidence",
+                    "target_player_key",
+                    "proposed_name",
+                ],
             },
         }
     },
@@ -90,6 +97,22 @@ def _name_tokens(name: str) -> set[str]:
 
 # Generational suffixes: on hundreds of players, useless as a shortlist signal.
 _SUFFIX_TOKENS = {"jr", "sr", "ii", "iii", "iv", "v"}
+
+
+def _compatible_names(a: str | None, b: str | None) -> bool:
+    """
+    Whether two names could plausibly be the same person: they fold equal, or
+    share a name token (ignoring suffix tokens). A rename shares the surname
+    ("Bub" -> "Carlton" Carrington), a nickname shares it too (Bones/Nah'Shon
+    Hyland), a word-order swap shares both. Used to reject a model's link/merge
+    target that has no name in common with the source — a batch-contamination
+    hallucination (Bones Hyland -> Alexandre Sarr) rather than a real match.
+    """
+    if not a or not b:
+        return False
+    if norm_name(a) == norm_name(b):
+        return True
+    return bool((_name_tokens(a) - _SUFFIX_TOKENS) & (_name_tokens(b) - _SUFFIX_TOKENS))
 
 
 def name_match(
@@ -514,6 +537,9 @@ class UtilComponent:
         players = self.db.read(
             "SELECT player_key, conformed_name FROM util.player ORDER BY player_key"
         )
+        name_by_key = {
+            r["player_key"]: r["conformed_name"] for r in players.iter_rows(named=True)
+        }
 
         staged = 0
         for chunk in candidates.iter_slices(batch_size):
@@ -529,6 +555,25 @@ class UtilComponent:
                 cand = cand_by_id.get((p.get("platform"), p.get("source_id")))
                 if cand is None:
                     continue
+
+                # Reject a link/merge whose target shares no name with the
+                # source: a model mixing up candidates in a batch (Bones Hyland
+                # -> Alexandre Sarr) rather than a real match.
+                proposal = p.get("proposal")
+                target = p.get("target_player_key")
+                if proposal == "link" and not _compatible_names(
+                    cand["source_name"], name_by_key.get(target)
+                ):
+                    logger.info(
+                        "review: dropped implausible link %r -> %s",
+                        cand["source_name"], target,
+                    )
+                    continue
+                if proposal == "merge" and not _compatible_names(
+                    name_by_key.get(cand["subject_player_key"]), name_by_key.get(target)
+                ):
+                    continue
+
                 input_hash = hashlib.sha256(
                     f"{origin}|{cand['platform']}|{cand['source_id']}".encode()
                 ).hexdigest()
@@ -733,16 +778,30 @@ class UtilComponent:
             "different people; genuine namesakes (e.g. a father and son) stay "
             "separate. Answer only with JSON, no commentary."
         )
+        if origin == "audit":
+            options = (
+                "Each candidate is ALREADY mapped to subject_player_key. Choose:\n"
+                "- no_action: that mapping is correct (the usual answer here)\n"
+                "- link: the id belongs to a DIFFERENT existing player -> target_player_key\n"
+                "- merge: subject_player_key and target_player_key are the same person "
+                "-> target_player_key\n"
+                "- new: no existing player matches (rare)"
+            )
+        else:
+            options = (
+                "Each candidate is NOT yet mapped. Choose:\n"
+                "- link: the id belongs to an existing player -> target_player_key\n"
+                "- new: no existing player matches -> proposed_name\n"
+                "- no_action: leave it for a human (rare)"
+            )
         user = (
-            f"Context: {origin}. Known players as player_key: name\n{known}\n\n"
-            "Candidates:\n" + json.dumps(candidates) + "\n\n"
-            "Return one proposal per candidate:\n"
-            "- link: the source id belongs to an existing player -> target_player_key\n"
-            "- merge: two existing players are one person -> subject_player_key "
-            "and target_player_key\n"
-            "- new: no existing player -> proposed_name\n"
-            "- no_action: leave it alone (a benign alias or already correct)\n"
-            "Confidence in [0,1]; keep each reason under 12 words."
+            f"Known players (player_key: name):\n{known}\n\n"
+            "Candidates:\n" + json.dumps(candidates) + "\n\n" +
+            options + "\n\n"
+            "For every candidate return platform, source_id, proposal, a confidence "
+            "in [0,1], target_player_key (null when unused), proposed_name (null when "
+            "unused), and a reason under 12 words. A 'link' or 'merge' must carry a "
+            "target_player_key."
         )
 
         body = {
