@@ -454,6 +454,12 @@ class UtilComponent:
 
         The seed is Python for the same reason the matcher is: no user-defined
         function, so it runs on Postgres or CockroachDB unchanged.
+
+        TODO (future self): when util."conformed_player_id_RETIRED" (postgres)
+        / util.conformed_player_id (cockroach) is dropped, DELETE this method —
+        this is the only thing that reads the old table, and its whole purpose
+        is the rebuild path that the drop gives up. Also remove the matching
+        dev/README.md entries.
         """
         retired = self.db.read(
             'SELECT * FROM util."conformed_player_id_RETIRED" '

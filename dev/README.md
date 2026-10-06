@@ -720,6 +720,12 @@ merges are not yet applied.
 
 ## Outstanding
 
+- **TODO — when `conformed_player_id` is dropped, delete `build_player_identity()`.**
+  `UtilComponent.build_player_identity()` is the only thing that reads the
+  retired table (postgres `util."conformed_player_id_RETIRED"`, cockroach
+  `util.conformed_player_id`), and its sole purpose is the rebuild path that the
+  drop gives up. Remove the method and this README's references to it at the same
+  time. Nothing in the daily loop depends on it.
 - **`ctx.cur_season` is hardcoded** to `"2025-26"` at `context.py:21` with the
   `nba_parameters` lines commented out, while three ESPN leagues are already
   registered for 2026-27 (with no rows fetched yet). Everything above is
