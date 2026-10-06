@@ -519,6 +519,43 @@ the original 30 splits. A name matching more than one player is left unmatched
 rather than guessed at. Genuine platform renames ("Bub Carrington" → "Carlton
 Carrington") stay in the backlog for `name_match()` and a human.
 
+## The LLM review path
+
+The deterministic matcher handles everything it can; what it cannot — renames,
+aliases, namesakes it declines to guess — goes through a local model and a
+staging table, never straight into the identity tables.
+
+```
+review_player_identities(origin='backlog')   →  util.player_identity_review  →  apply_player_identity_reviews()
+review_player_identities(origin='audit')     →  (pending/accepted)            (the only writer)
+```
+
+- **`origin='backlog'`** reviews `util.unmatched_player_source_vw` — the ongoing
+  path, run after the daily source jobs. **`origin='audit'`** reviews ids that are
+  already mapped but inconsistent (the one-time backfill); the backlog cannot see
+  those.
+- Every proposal is written to the staging table; `apply_player_identity_reviews`
+  is the only writer to `util.player` / `util.player_source_id`. **`link` and
+  `new`** auto-apply at ≥ 0.9 confidence *only when the name folds to the target's*;
+  **`merge` and renames always require `status='accepted'`** — that is what keeps
+  genuine namesakes (Jameer Nelson Sr/Jr) apart. Re-runs are idempotent on
+  `input_hash`.
+- The model sees only a **shortlist** of players sharing a folded name token with
+  the batch, not all ~2.7k — sending the whole table is slow and noisy. Suffix
+  tokens (jr/ii/iii) are ignored.
+
+Configure the model with an `[ollama]` section in `credentials.ini`:
+
+```ini
+[ollama]
+host    = http://<jetson-ip>:11434
+model   = <model-tag>
+timeout = 600
+```
+
+Env vars `OLLAMA_HOST` / `OLLAMA_MODEL` / `OLLAMA_TIMEOUT` override the section.
+Defaults are `http://localhost:11434`, `llama3.1`, 600s.
+
 ## Cadence: no update_schedule row
 
 `util.update_schedule` has no cadence column and the runner drives everything

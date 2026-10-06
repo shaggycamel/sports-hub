@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import unicodedata
 from collections import defaultdict
 from pathlib import Path
@@ -53,25 +54,42 @@ _PROPOSAL_SCHEMA = {
 }
 
 
+def _fold(name: str) -> str:
+    """
+    Casefold to ASCII letters, keeping spaces and punctuation: the shared base
+    for norm_name() and for tokenising. NFKD decomposes accents to base +
+    combining mark, the mark is dropped; _LATIN_FOLD covers letters NFKD does
+    not decompose.
+    """
+    if not name:
+        return ""
+    decomposed = unicodedata.normalize("NFKD", name)
+    folded = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return folded.translate(_LATIN_FOLD).lower()
+
+
 def norm_name(name: str) -> str:
     """
     The canonical name fold. Every match and collision check goes through this,
     in Python rather than SQL, so the identity pipeline behaves identically on
     Postgres and CockroachDB and needs no user-defined function on either.
 
-    NFKD decomposes each accented letter to base + combining mark and the mark
-    is dropped, so it prescinds the hand-maintained translate() list a SQL
-    version needs — the one that silently DELETED any diacritic it did not name
-    (ć, ā, đ, …), splitting Boban Marjanović from Boban Marjanovic. _LATIN_FOLD
-    covers the letters NFKD does not decompose (ø, æ, đ, …). Casefolded, with
-    every non-letter removed. Never fuzzy.
+    NFKD prescinds the hand-maintained translate() list a SQL version needs —
+    the one that silently DELETED any diacritic it did not name (ć, ā, đ, …),
+    splitting Boban Marjanović from Boban Marjanovic. Casefolded, with every
+    non-letter removed. Never fuzzy.
     """
-    if not name:
-        return ""
-    decomposed = unicodedata.normalize("NFKD", name)
-    folded = "".join(c for c in decomposed if not unicodedata.combining(c))
-    folded = folded.translate(_LATIN_FOLD)
-    return "".join(c for c in folded if c.isascii() and c.isalpha()).lower()
+    return "".join(c for c in _fold(name) if c.isascii() and c.isalpha())
+
+
+def _name_tokens(name: str) -> set[str]:
+    """Folded name split on non-letters — the unit the LLM shortlist matches on.
+    Drops single letters, so "P.J." contributes 'washington', not 'p'/'j'."""
+    return {t for t in re.split(r"[^a-z]+", _fold(name)) if len(t) > 1}
+
+
+# Generational suffixes: on hundreds of players, useless as a shortlist signal.
+_SUFFIX_TOKENS = {"jr", "sr", "ii", "iii", "iv", "v"}
 
 
 def name_match(
@@ -496,7 +514,8 @@ class UtilComponent:
 
         staged = 0
         for chunk in candidates.iter_slices(batch_size):
-            proposals, model = self._ask_ollama(players, chunk, origin)
+            relevant = self._shortlist_players(players, chunk)
+            proposals, model = self._ask_ollama(relevant, chunk, origin)
             for p in proposals:
                 hash_input = "|".join(str(p.get(k)) for k in (
                     origin, p.get("platform"), p.get("source_id"),
@@ -659,9 +678,36 @@ class UtilComponent:
             },
         )
 
+    def _shortlist_players(self, players: pl.DataFrame, candidates: pl.DataFrame, limit: int = 25) -> pl.DataFrame:
+        """
+        The players worth showing the model for this batch, ranked by how many
+        folded name tokens they share with a candidate and capped tight. Sending
+        all ~2.7k names every call is slow and distracting; token overlap keeps
+        every real target — a rename or namesake shares the surname, a word-order
+        swap shares both tokens — while dropping the prompt to a couple of dozen.
+
+        Suffix tokens (jr/sr/ii/iii/iv) are ignored: they are on hundreds of
+        players and match nothing useful.
+        """
+        token_index: dict[str, set[int]] = defaultdict(set)
+        for r in players.iter_rows(named=True):
+            for token in _name_tokens(r["conformed_name"]) - _SUFFIX_TOKENS:
+                token_index[token].add(r["player_key"])
+
+        score: dict[int, int] = defaultdict(int)
+        for c in candidates.iter_rows(named=True):
+            for token in _name_tokens(c["source_name"]) - _SUFFIX_TOKENS:
+                for player_key in token_index.get(token, ()):
+                    score[player_key] += 1
+
+        if not score:
+            return players.head(0)
+        top = sorted(score, key=lambda key: (-score[key], key))[:limit]
+        return players.filter(pl.col("player_key").is_in(top))
+
     def _ask_ollama(self, players: pl.DataFrame, chunk: pl.DataFrame, origin: str):
-        """Send one batch of candidates and the known player list, get JSON back."""
-        host, model = self._ollama_config()
+        """Send one batch of candidates and the shortlisted players, get JSON back."""
+        host, model, timeout = self._ollama_config()
 
         known = "\n".join(
             f'{r["player_key"]}: {r["conformed_name"]}'
@@ -701,23 +747,29 @@ class UtilComponent:
                     {"role": "user", "content": user},
                 ],
             },
-            timeout=300,
+            timeout=timeout,
         )
         resp.raise_for_status()
         content = resp.json()["message"]["content"]
         return json.loads(content).get("proposals", []), model
 
-    def _ollama_config(self) -> tuple[str, str]:
-        """host, model — env vars win, then an [ollama] credentials section."""
+    def _ollama_config(self) -> tuple[str, str, int]:
+        """host, model, timeout — env vars win, then an [ollama] credentials section."""
         host = os.environ.get("OLLAMA_HOST")
         model = os.environ.get("OLLAMA_MODEL")
+        timeout = os.environ.get("OLLAMA_TIMEOUT")
         if Path(self.db.ini_path).exists():
             parser = configparser.ConfigParser()
             parser.read(self.db.ini_path)
             if parser.has_section("ollama"):
                 host = host or parser.get("ollama", "host", fallback=None)
                 model = model or parser.get("ollama", "model", fallback=None)
-        return (host or "http://localhost:11434").rstrip("/"), model or "llama3.1"
+                timeout = timeout or parser.get("ollama", "timeout", fallback=None)
+        return (
+            (host or "http://localhost:11434").rstrip("/"),
+            model or "llama3.1",
+            int(timeout or 600),
+        )
 
     def _link_source_id(self, platform, source_id, source_name, player_key) -> None:
         with self.db.engine.begin() as conn:
