@@ -549,12 +549,17 @@ Configure the model with an `[ollama]` section in `credentials.ini`:
 ```ini
 [ollama]
 host    = http://<jetson-ip>:11434
-model   = <model-tag>
+model   = <chat-model-tag>
 timeout = 600
+think   = false
 ```
 
-Env vars `OLLAMA_HOST` / `OLLAMA_MODEL` / `OLLAMA_TIMEOUT` override the section.
-Defaults are `http://localhost:11434`, `llama3.1`, 600s.
+Env vars `OLLAMA_HOST` / `OLLAMA_MODEL` / `OLLAMA_TIMEOUT` / `OLLAMA_THINK` override
+the section. Defaults are `http://localhost:11434`, `llama3.1`, 600s, false. The
+model must be a **chat/instruct** model — an embedding model (e.g.
+nomic-embed-text) cannot produce proposals. `think = false` matters for reasoning
+models: without it a local one spent ~850 hidden tokens per three candidates at
+~11 tok/s.
 
 ## Cadence: no update_schedule row
 
