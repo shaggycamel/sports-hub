@@ -563,6 +563,61 @@ models: without it a local one spent ~850 hidden tokens per three candidates at
 
 ## Runbook
 
+Almost all of this is one-way and automatic; the only routine human step is
+clearing a merge/rename queue that is usually empty. `[auto]` is unattended, ✋
+is a human.
+
+```
+DAILY (after the source jobs) — one call, fully automatic
+════════════════════════════════════════════════════════════
+ [auto]  source jobs write nba.* / statyx.* / fty.*
+            │
+ [auto]      ▼
+         sync_player_identity()
+            │
+            ├─(1) conform_player_ids()      fold names in Python, attach exact
+            │                                matches, mint genuinely new names
+            │
+            ├─(2) backlog empty?  ── yes ──► skip the model entirely (most days)
+            │        │ no
+ [auto]      │        ▼
+            │     review_player_identities(origin="backlog")
+            │        └─ asks the model, writes proposals to
+            │           util.player_identity_review   (STAGING ONLY)
+            │
+            ├─(3) apply_player_identity_reviews()
+            │        ├─ link / new, same-name, >=0.9  ──► applied automatically
+            │        └─ merge / rename  ──► LEFT PENDING (see ✋ below)
+            │
+            └─(4) check_player_identity()   expect 0 / 0 / 0
+```
+
+```
+THE ONLY ROUTINE HUMAN STEP  ✋   (usually empty; a few times a season)
+════════════════════════════════════════════════════════════
+ ✋  SELECT * FROM util.player_identity_review WHERE status='pending';
+ ✋  accept: UPDATE ... SET status='accepted';   reject: SET status='rejected';
+         │
+         ▼
+     the next sync_player_identity() applies the accepted ones.
+     (This is the Jameer Nelson Sr/Jr safety: the model cannot merge two people.)
+```
+
+```
+ONE-TIME / DEPLOY — not part of the daily loop
+════════════════════════════════════════════════════════════
+ ✅ audit pass (review_player_identities(origin="audit"))
+ ✅ hand corrections applied; postgres and cockroach aligned at 2725 / 5070
+ ✅ util.player_identity_review + util.player_identity_check on both DBs
+ ✋ once, all infra: push sports-hub, bump nba_cockroach_db's uv.lock and
+    rebuild the image, and set the cockroach sections' dialect=cockroachdb
+    on the NUC. Until then the runner logs a warning and skips (2)/(3).
+```
+
+The mental model is three lines: **automatic** (source jobs → `sync_player_identity()`
+runs itself every day); **human, rare** (clear the merge/rename queue when non-empty);
+**one-time, done** (audit, cockroach alignment, deploy).
+
 One call does the routine, after the jobs that write the source tables:
 
 ```python
