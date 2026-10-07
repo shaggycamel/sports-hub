@@ -68,14 +68,44 @@ class FtyComponent:
         Credentials hang off the customer rather than the league, so this joins
         through customer_platform; DISTINCT because several customers can share
         one league and it only needs connecting once.
+
+        The league's finish date (MAX(matchup_end) in league_matchup_dates) is
+        carried out so a finished CURRENT-season league can be logged and skipped
+        rather than connected. Only the current season is filtered: an explicit
+        season — a backfill — connects regardless, because a finished historical
+        season is exactly what it wants. A league with no derived dates yet
+        (pre-season, or a platform with no date deriver such as Yahoo) is kept.
+        The boundary is the finish date plus one day: a league still connects
+        through the day after its last matchup, then is skipped.
         """
-        return self.db.read(
-            "SELECT DISTINCT cl.season, cl.platform, cl.league_id, cp.credentials "
+        leagues = self.db.read(
+            "SELECT DISTINCT cl.season, cl.platform, cl.league_id, cp.credentials, "
+            "       md.finish_date "
             f"FROM {self.schema}.customer_league cl "
             f"JOIN {self.schema}.customer_platform cp "
             "  ON cp.customer_id = cl.customer_id AND cp.platform = cl.platform "
+            f"LEFT JOIN (SELECT season, platform, league_id, "
+            f"                   MAX(matchup_end) AS finish_date "
+            f"            FROM {self.schema}.league_matchup_dates "
+            "             GROUP BY season, platform, league_id) md "
+            "  ON md.season = cl.season AND md.platform = cl.platform "
+            "     AND md.league_id = cl.league_id "
             f"WHERE cl.season = '{season}'"
         )
+
+        if season == self.ctx.cur_season:
+            finished = (
+                pl.col("finish_date").is_not_null()
+                & ((pl.col("finish_date") + pl.duration(days=1)) < pl.lit(self.ctx.date_est))
+            )
+            for r in leagues.filter(finished).iter_rows(named=True):
+                logger.info(
+                    "%s;%s: season %s finished on %s — skipping connection",
+                    r["platform"], r["league_id"], season, r["finish_date"],
+                )
+            leagues = leagues.filter(~finished)
+
+        return leagues.drop("finish_date")
 
     def _season_year_for(self, sport: str) -> int:
         # Season semantics are sport-specific. Only NBA is wired up today —

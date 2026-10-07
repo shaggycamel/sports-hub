@@ -1,5 +1,4 @@
 import configparser
-import difflib
 import hashlib
 import json
 import logging
@@ -12,7 +11,6 @@ from pathlib import Path
 import polars as pl
 import requests
 from sqlalchemy import text
-from yfpy.query import YahooFantasySportsQuery  as yfpy
 
 logger = logging.getLogger(__name__)
 
@@ -113,103 +111,6 @@ def _compatible_names(a: str | None, b: str | None) -> bool:
     if norm_name(a) == norm_name(b):
         return True
     return bool((_name_tokens(a) - _SUFFIX_TOKENS) & (_name_tokens(b) - _SUFFIX_TOKENS))
-
-
-def name_match(
-    df_left: pl.DataFrame,
-    df_right: pl.DataFrame,
-    left_on: str,
-    right_on: str,
-) -> pl.DataFrame:
-    """
-    Fuzzy-match names between two DataFrames using difflib.
-
-    For each name in df_left[left_on], finds close matches in
-    df_right[right_on]. Results are pivoted wide so each match is its own
-    column (match_1, match_2, ...) appended to df_left.
-
-    Unmatched names from both sides are included with null values.
-
-    Parameters
-    ----------
-    df_left : pl.DataFrame
-        Primary DataFrame containing names to match from.
-    df_right : pl.DataFrame
-        Reference DataFrame containing names to match against.
-    left_on : str
-        Column name in df_left with names to match.
-    right_on : str
-        Column name in df_right with names to match against.
-    """
-    left_names = df_left[left_on].unique().to_list()
-    right_names = df_right[right_on].unique().to_list()
-
-    rows = []
-    matched_right = set()
-    for name in left_names:
-        close = difflib.get_close_matches(name, right_names)
-        if close and close[0] == name:
-            rows.append({left_on: name, "match_rank": 1, "match_name": close[0]})
-            matched_right.add(close[0])
-        elif close:
-            for rank, match in enumerate(close, 1):
-                rows.append({left_on: name, "match_rank": rank, "match_name": match})
-                matched_right.add(match)
-        else:
-            rows.append({left_on: name, "match_rank": 1, "match_name": None})
-
-    if not rows:
-        return df_left
-
-    df_matches = (
-        pl.DataFrame(rows)
-        .with_columns(pl.col("match_rank").cast(pl.Utf8))
-        .pivot(on="match_rank", index=left_on, values="match_name")
-    )
-
-    max_rank = df_matches.width - 1
-    df_matches = df_matches.rename({str(i): f"match_{i}" for i in range(1, max_rank + 1)})
-
-    # Join match columns back to full df_left
-    df = df_left.join(df_matches, on=left_on, how="left")
-
-    # Join df_right columns for each match column
-    right_extra_cols = [c for c in df_right.columns if c != right_on]
-    match_cols = [c for c in df.columns if c.startswith("match_")]
-    for match_col in match_cols:
-        df_right_renamed = df_right.rename(
-            {right_on: match_col, **{c: f"{c}_{match_col}" for c in right_extra_cols}}
-        )
-        df = df.join(df_right_renamed, on=match_col, how="left")
-
-    # Add unmatched right names as separate rows
-    unmatched = [name for name in right_names if name not in matched_right]
-    if unmatched:
-        df_unmatched = (
-            df_right.filter(pl.col(right_on).is_in(unmatched))
-            .rename({right_on: "match_1", **{c: f"{c}_match_1" for c in right_extra_cols}})
-        )
-        df = pl.concat([df, df_unmatched], how="diagonal")
-
-    return df
-
-
-def generate_yahoo_access_token(league):
-    """ TODO """
-
-    # Enter correct info
-    query =  yfpy(
-        league_id=league.league_id,
-        game_code="nba",
-        yahoo_consumer_key=league.yahoo_consumer_key,
-        yahoo_consumer_secret=league.yahoo_consumer_secret,
-    )
-
-    # Instead of saving here, overwrite entry in database
-    query.save_access_token_data_to_env_file(
-        # env_file_location=Path('/Users/fred/git/nba_cockroach_db'), 
-        # save_json_to_var_only=True
-    )
 
 
 class UtilComponent:
@@ -442,67 +343,6 @@ class UtilComponent:
                 "failures": [orphans, backlog, collisions],
             },
             schema={"check_name": pl.Utf8, "failures": pl.Int64},
-        )
-
-    def build_player_identity(self) -> None:
-        """
-        Rebuild util.player / util.player_source_id from the retired wide
-        util."conformed_player_id_RETIRED". Assumes both tables are empty; pair
-        it with dev/build_player_identity.sql (the DDL) and then
-        conform_player_ids() for anything the directory reports beyond the
-        retired table.
-
-        The seed is Python for the same reason the matcher is: no user-defined
-        function, so it runs on Postgres or CockroachDB unchanged.
-
-        TODO (future self): when util."conformed_player_id_RETIRED" (postgres)
-        / util.conformed_player_id (cockroach) is dropped, DELETE this method —
-        this is the only thing that reads the old table, and its whole purpose
-        is the rebuild path that the drop gives up. Also remove the matching
-        dev/README.md entries.
-        """
-        retired = self.db.read(
-            'SELECT * FROM util."conformed_player_id_RETIRED" '
-            "WHERE conformed_name IS NOT NULL"
-        ).with_columns(
-            pl.col("conformed_name").map_elements(norm_name, return_dtype=pl.Utf8).alias("norm")
-        )
-
-        players = retired.group_by("norm").agg(
-            pl.col("conformed_name").min().alias("conformed_name")
-        )
-        key_by_norm = {
-            r["norm"]: self._mint_player(r["conformed_name"], needs_review=False)
-            for r in players.iter_rows(named=True)
-        }
-
-        rows = []
-        for r in retired.iter_rows(named=True):
-            player_key = key_by_norm[r["norm"]]
-            for platform, id_col, name_col in (
-                ("nba", "nba_id", "nba_name"),
-                ("espn", "espn_id", "espn_name"),
-                ("yahoo", "yahoo_id", "yahoo_name"),
-                ("statyx", "statyx_id", "statyx_name"),
-            ):
-                if r[id_col] is None:
-                    continue
-                rows.append((platform, r[id_col], r[name_col] or None, player_key))
-
-        with self.db.engine.begin() as conn:
-            for platform, source_id, source_name, player_key in rows:
-                conn.execute(
-                    text(
-                        "INSERT INTO util.player_source_id "
-                        "(platform, source_id, source_name, player_key) "
-                        "VALUES (:p, :sid, :sn, :pk) ON CONFLICT DO NOTHING"
-                    ),
-                    {"p": platform, "sid": source_id, "sn": source_name, "pk": player_key},
-                )
-
-        logger.info(
-            "build_player_identity: %d player(s), %d mapping(s)",
-            len(key_by_norm), len(rows),
         )
 
     def review_player_identities(self, origin: str = "backlog", batch_size: int = 20, limit: int | None = None) -> int:

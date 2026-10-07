@@ -8,7 +8,6 @@ dependencies = [
     "polars",
     "pyjanitor==0.30.0",
     "requests",
-    "beautifulsoup4",
     "python-dateutil",
     "tabula-py",
     "nba_api",

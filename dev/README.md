@@ -474,7 +474,7 @@ raw strings recreated the split it was meant to end — a first pass produced 20
 duplicated players. Hence `norm_name()`, which every match goes through.
 
 > **The fold is Python now, not SQL.** `util.norm_name` (a `translate()` list
-> plus `regexp_replace`) was replaced by `UtilComponent.norm_name` in
+> plus `regexp_replace`) was replaced by `norm_name()` in
 > `src/sports_hub/utility.py`. The SQL version silently DELETED any diacritic it
 > did not name (`ć ā đ ņ Ş ū …`), so "Boban Marjanović" folded to `bobanmarjanovi`
 > against espn's `bobanmarjanovic` and split the player. The Python version uses
@@ -517,7 +517,7 @@ empties the view the mint reads. Doing it in Python is what removed the
 Matching is normalised-exact, **never fuzzy** — fuzzy auto-linking is what caused
 the original 30 splits. A name matching more than one player is left unmatched
 rather than guessed at. Genuine platform renames ("Bub Carrington" → "Carlton
-Carrington") stay in the backlog for `name_match()` and a human.
+Carrington") stay in the backlog for `review_player_identities()` and a human.
 
 ## The LLM review path
 
@@ -655,10 +655,12 @@ with `status='rejected'`.
 One-time (already done on this data): `review_player_identities(origin='audit')`
 to find ids that are *already* mapped but wrong — the backlog cannot see those.
 
-Rebuild from scratch: `build_player_identity.sql` → `build_player_identity()` →
+Rebuild from scratch: `build_player_identity.sql` →
 `build_player_identity_views.sql` → `conform_player_ids()` →
 `seed_player_identity_review.sql` + `apply_player_identity_reviews()` for the
-hand corrections.
+hand corrections. The retired-crosswalk seed that used to sit between the DDL and
+the views has been removed, so a directory-only rebuild is incomplete (see
+Outstanding).
 
 ## Verified state
 
@@ -693,11 +695,12 @@ while the mapping statement only ever mapped the id once, leaving a player ownin
 nothing. Caught by asserting `players owning no mapping = 0`, which is worth
 keeping as a check after any run.
 
-## What name_match is and isn't for
+## What the retired fuzzy matcher was for
 
-`name_match` is **not** used by `conform_player_ids` and should not be. Run by
-hand over the 181 players that hold no nba id, it returned a "close match" for
-148 of them and most were nonsense — "Aday Mara" → "Cody Martin", "Jayden Nunn"
+The fuzzy matcher (`name_match`, now deleted) was **never** used by
+`conform_player_ids` and should not be. Run by hand over the 181 players that
+hold no nba id, it returned a "close match" for 148 of them and most were
+nonsense — "Aday Mara" → "Cody Martin", "Jayden Nunn"
 → "Jalen Brunson", "Cameron Boozer" → "Carlos Boozer" (his father). Auto-linking
 on that output is how the original 30 splits happened.
 
@@ -720,12 +723,6 @@ merges are not yet applied.
 
 ## Outstanding
 
-- **TODO — when `conformed_player_id` is dropped, delete `build_player_identity()`.**
-  `UtilComponent.build_player_identity()` is the only thing that reads the
-  retired table (postgres `util."conformed_player_id_RETIRED"`, cockroach
-  `util.conformed_player_id`), and its sole purpose is the rebuild path that the
-  drop gives up. Remove the method and this README's references to it at the same
-  time. Nothing in the daily loop depends on it.
 - **`ctx.cur_season` is hardcoded** to `"2025-26"` at `context.py:21` with the
   `nba_parameters` lines commented out, while three ESPN leagues are already
   registered for 2026-27 (with no rows fetched yet). Everything above is
@@ -735,14 +732,13 @@ merges are not yet applied.
 - **`nba.team_roster.player_id` is `double precision`**, cast to bigint in the
   directory view. Worth fixing at source.
 - **`util.conformed_player_id` has been renamed `conformed_player_id_RETIRED`**
-  and the seed reads it under that name, quoted, since Postgres folds unquoted
-  identifiers to lower case.
+  (quoted, since Postgres folds unquoted identifiers to lower case). The seed
+  that read it has been removed; only the five un-ported dashboard views still
+  read it, so it cannot be dropped until they are refabricated.
 
-  It is **safe to drop** whenever you are satisfied with the current state.
-  Nothing reads it in steady state, and `player_source_id` is a strict superset:
-  of its 2871 unpivoted ids, **0 are absent** from the live table, which holds
-  5070. Dropping it costs only the ability to re-run
-  `build_player_identity.sql` from nothing.
+  `player_source_id` is a strict superset: of the retired table's 2871 unpivoted
+  ids, **0 are absent** from the live table, which holds 5070. Dropping it costs
+  nothing beyond the rebuild path already given up.
 
   What genuinely cannot be regenerated is `player_source_id` itself.
   `player_directory_vw` never reports espn/yahoo ids for players outside the
@@ -837,6 +833,12 @@ Works from `self.leagues` like its neighbours, so the season comes from
 fix below. No `util.update_schedule` row: derived once per season, like `league`,
 `league_categories` and `league_competitor`.
 
+For the current season, `connect_leagues()` logs and skips any league whose last
+matchup in `league_matchup_dates` ended more than a day ago (a one-day buffer for
+late stats). The league is still registered, but no connection is made and the
+daily jobs leave it alone. Explicit seasons (`connect_leagues(season=...)`) are
+never filtered, so backfills are unaffected.
+
 It dispatches BEFORE deleting, unlike the methods around it. The handler raises
 when `nba.key_dates` has no opener, and deleting first would leave the league
 with no dates at all — which silently removes it from `league_schedule_vw`.
@@ -923,9 +925,9 @@ data regardless of the season asked for. No corruption:
 
 - `build_fty_dev.sql` — the schema, idempotent
 - `build_player_identity.sql` — the two identity tables (DDL only). **Not
-  idempotent** — drop the tables to re-run. Seeding from
-  `util.conformed_player_id_RETIRED` is now `UtilComponent.build_player_identity()`,
-  in Python so no SQL function is needed
+  idempotent** — drop the tables to re-run. Populate them with
+  `conform_player_ids()` after the views file; the retired-crosswalk seed has
+  been removed
 - `build_player_identity_views.sql` — the directory, activity and backlog views
 - `build_player_identity_review.sql` — `util.player_identity_review`, the staging
   table for model-proposed corrections. Idempotent (`IF NOT EXISTS`)

@@ -32,7 +32,7 @@ ORDER BY 2;
 -- suffix, which the fold deliberately does NOT strip. Read every result
 -- before acting — "Jameer Nelson" and "Jameer Nelson Jr." are father and son,
 -- and automating this rule would merge them. The fold itself is Python
--- (UtilComponent.norm_name); this SQL approximation only needs the trailing
+-- (norm_name() in utility.py); this SQL approximation only needs the trailing
 -- suffix, so lower + strip punctuation is enough for a human review.
 WITH s AS (
     SELECT player_key, conformed_name,
@@ -62,7 +62,7 @@ BEGIN;
     WHERE conformed_name = 'Michael Frazier II';
 ROLLBACK;  -- change to COMMIT once check (2) is clean
 
--- The five merges name_match found and a human confirmed, not yet applied:
+-- The five merges a name audit found and a human confirmed, not yet applied:
 --   Billy Garrett      -> Billy Garrett Jr.
 --   Boo Buie           -> Boo Buie III
 --   Joel Berry         -> Joel Berry II
@@ -105,23 +105,13 @@ INSERT INTO util.player_source_id SELECT * FROM util.player_source_id_bak;
 SELECT setval(pg_get_serial_sequence('util.player', 'player_key'),
               (SELECT max(player_key) FROM util.player));
 
--- 8b. REBUILD FROM SCRATCH. dev/build_player_identity.sql (re-seeds from
--- util."conformed_player_id_RETIRED"), then the views file, then
--- hub.util.conform_player_ids(). Expected afterwards: 2737 players, 5070
--- mappings, 0 orphans, 0 backlog. Verify the retired table is still redundant
--- before relying on this path:
-WITH retired AS (
-  SELECT src.platform, src.source_id
-  FROM util."conformed_player_id_RETIRED" c
-  CROSS JOIN LATERAL (VALUES ('nba', c.nba_id), ('espn', c.espn_id),
-                             ('yahoo', c.yahoo_id), ('statyx', c.statyx_id))
-    AS src(platform, source_id)
-  WHERE src.source_id IS NOT NULL
-)
-SELECT count(*) AS ids_only_in_retired   -- 0 means the live table has everything
-FROM retired r
-WHERE NOT EXISTS (SELECT 1 FROM util.player_source_id m
-                  WHERE m.platform = r.platform AND m.source_id = r.source_id);
+-- 8b. REBUILD FROM SCRATCH. dev/build_player_identity.sql (DDL), then the views
+-- file, then hub.util.conform_player_ids(). Expected afterwards: 2737 players,
+-- 5070 mappings, 0 orphans, 0 backlog. The old seed from
+-- util."conformed_player_id_RETIRED" has been removed, so a directory-only
+-- rebuild is INCOMPLETE — player_directory_vw never reports espn/yahoo ids for
+-- players outside the seasons fty holds data for. Restore from a snapshot (8a)
+-- instead when you can.
 
 -- 9. ADD A PLATFORM. No DDL — the mapping table is already long. Add a UNION arm
 -- to util.player_directory_vw returning (season, platform, source_id,

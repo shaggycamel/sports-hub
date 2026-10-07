@@ -17,19 +17,15 @@
 -- Platform vocabulary is lowercase throughout util.* ('nba', 'espn', 'statyx',
 -- 'yahoo'). fty.* stores 'ESPN'/'Yahoo', so reads of those tables lower() it.
 --
--- DDL ONLY. The seed from util."conformed_player_id_RETIRED" now lives in Python
--- — UtilComponent.build_player_identity() — because name normalisation moved out
--- of SQL (see below), and matching runs on both Postgres and CockroachDB with
--- no user-defined function. After running this file on an empty database, call
--- hub.util.build_player_identity(), then dev/build_player_identity_views.sql,
--- then hub.util.conform_player_ids() for anything the directory reports beyond
--- the retired table.
+-- DDL ONLY. On an empty database, run this file, then
+-- dev/build_player_identity_views.sql, then hub.util.conform_player_ids() to
+-- populate both tables from util.player_directory_vw. The one-time seed from the
+-- retired crosswalk has been removed.
 --
--- The retired table is still worth keeping until you are satisfied: it holds
--- espn/yahoo ids the live directory never reports (players outside the seasons
--- fty has data for), so player_source_id is NOT fully reconstructible from
--- util.player_directory_vw alone. Do not drop it before backing up
--- player_source_id.
+-- player_source_id is NOT fully reconstructible from util.player_directory_vw
+-- alone: the directory never reports espn/yahoo ids for players outside the
+-- seasons fty holds data for, and the retired table held some of those. Back up
+-- player_source_id before any destructive step.
 
 BEGIN;
 

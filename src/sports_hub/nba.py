@@ -3,15 +3,12 @@ import zoneinfo
 import datetime as dt
 import logging
 import requests
-import bs4
 import dateutil.parser
-import sqlalchemy
 import polars as pl
 import polars.selectors as cs
 import janitor.polars  # noqa: F401  (registers .clean_names() on pl.DataFrame)
 import nbainjuries
 import nba_api.stats.endpoints as nba_ep
-import tabula
 
 logger = logging.getLogger(__name__)
 

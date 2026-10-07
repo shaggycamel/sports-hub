@@ -102,7 +102,7 @@ ORDER BY d.season, d.platform, d.source_id, d.source_name;
 -- "Mike Miles" in the box scores and "Mike Miles Jr." on the roster — and a
 -- matcher reading a per-name grain mints a player for each spelling while only
 -- ever mapping the id once, leaving a stray player owning nothing. Both
--- statements of UtilComponent._conform read this view, so both see one name per id.
+-- statements of UtilComponent.conform_player_ids read this view, so both see one name per id.
 CREATE VIEW util.unmatched_player_source_vw AS
 SELECT DISTINCT ON (d.platform, d.source_id)
        d.season, d.platform, d.source_id, d.source_name
