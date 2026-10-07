@@ -87,8 +87,8 @@ class StatyxPipeline:
                   the available set depends on `sport`, passed at construction time.
         params:   query params, e.g. {"season": 2024}. Some endpoints have required
                   params ("assets" needs sport, nfl "weekly_usage" needs season and
-                  week) and some reject "season" entirely ("usage_shock",
-                  "advanced_stats") — see the API docs for each.
+                  week) and some reject "season" entirely ("usage_shock") — see the
+                  API docs for each.
         keys:     required if the endpoint is keyed (e.g. player_ids); omit otherwise
 
         On return, self.errors holds any per-key failures ({key: error_message}).

@@ -229,7 +229,7 @@ class StatyxComponent:
         logger.info("statyx.advanced_stats")
         df = self.pipeline.run(
             "advanced_stats",
-            params=self._incremental("advanced_stats", season, params),
+            params={"season": int(season[:4]), **self._incremental("advanced_stats", season, params)},
             keys=ls_pl,
         )
 
