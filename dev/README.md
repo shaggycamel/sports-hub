@@ -471,8 +471,20 @@ visible rather than silent.
 "Egor Dëmin" is espn's "Egor Demin"; espn's "P.J. Hairston" is nba's "PJ
 Hairston"; `nba.team_roster` carries "Norris  Cole" with a double space. Matching
 raw strings recreated the split it was meant to end — a first pass produced 20
-duplicated players. Hence `util.norm_name()` (casefold, strip accents, strip
-non-alpha, IMMUTABLE so it can be indexed), which every match goes through.
+duplicated players. Hence `norm_name()`, which every match goes through.
+
+> **The fold is Python now, not SQL.** `util.norm_name` (a `translate()` list
+> plus `regexp_replace`) was replaced by `UtilComponent.norm_name` in
+> `src/sports_hub/utility.py`. The SQL version silently DELETED any diacritic it
+> did not name (`ć ā đ ņ Ş ū …`), so "Boban Marjanović" folded to `bobanmarjanovi`
+> against espn's `bobanmarjanovic` and split the player. The Python version uses
+> `unicodedata.normalize('NFKD')`, which needs no list, and folds the letters
+> NFKD does not decompose (`ø æ đ`) via a small table. Matching moved with it —
+> `conform_player_ids()` now folds in Polars — so the pipeline needs **no
+> user-defined function and runs identically on Postgres and CockroachDB**. The
+> `util.norm_name` function and its functional index `player_norm_name_ix` are
+> dropped. `check_player_identity()` carries the fold-based `colliding_names`
+> check the SQL view cannot; the view keeps the two DB-native checks.
 
 ## The matcher
 
@@ -495,27 +507,158 @@ an id seen late in the old season and not yet resolved. Verified with yahoo 5642
 backlog, where it would have sat forever. The unscoped call resolves it in 5.0s.
 
 
-`hub.util.conform_player_ids()` — two SQL statements, no staging
-table and no upsert. The first mints a player for any unmatched normalised name
-nobody owns; the second attaches every unmatched source id to the player holding
-that name. Re-running is a no-op because the second statement's output is exactly
-what empties the view the first reads.
+`hub.util.conform_player_ids()` — the same two moves, now done in Polars on
+`norm_name()` rather than in SQL joins: mint a player for any unmatched norm
+nobody owns, then attach every unmatched id to the player holding that norm.
+No staging table and no upsert. Re-running is a no-op because the attach is what
+empties the view the mint reads. Doing it in Python is what removed the
+`util.norm_name` UDF the SQL joins depended on, and with it the accent bug.
 
 Matching is normalised-exact, **never fuzzy** — fuzzy auto-linking is what caused
 the original 30 splits. A name matching more than one player is left unmatched
 rather than guessed at. Genuine platform renames ("Bub Carrington" → "Carlton
 Carrington") stay in the backlog for `name_match()` and a human.
 
-## Cadence: no update_schedule row
+## The LLM review path
 
-`util.update_schedule` has no cadence column and the runner drives everything
-daily (`util.update_log` shows `fty.free_agents` on 460 distinct days), so a row
-would mean daily — far more than this needs. Only 24 players first appeared after
-the 2025-26 pre-season seed.
+The deterministic matcher handles everything it can; what it cannot — renames,
+aliases, namesakes it declines to guess — goes through a local model and a
+staging table, never straight into the identity tables.
 
-Instead `util.unmatched_player_source_vw` is the backlog, and the daily jobs that
-write the source tables are already the detector. Non-empty means run
-`hub.util.conform_player_ids()`. Run it at season start; check the view otherwise.
+```
+review_player_identities(origin='backlog')   →  util.player_identity_review  →  apply_player_identity_reviews()
+review_player_identities(origin='audit')     →  (pending/accepted)            (the only writer)
+```
+
+- **`origin='backlog'`** reviews `util.unmatched_player_source_vw` — the ongoing
+  path, run after the daily source jobs. **`origin='audit'`** reviews ids that are
+  already mapped but inconsistent (the one-time backfill); the backlog cannot see
+  those.
+- Every proposal is written to the staging table; `apply_player_identity_reviews`
+  is the only writer to `util.player` / `util.player_source_id`. **`link` and
+  `new`** auto-apply at ≥ 0.9 confidence *only when the name folds to the target's*;
+  **`merge` and renames always require `status='accepted'`** — that is what keeps
+  genuine namesakes (Jameer Nelson Sr/Jr) apart. Re-runs are idempotent on
+  `input_hash`.
+- The model sees only a **shortlist** of players sharing a folded name token with
+  the batch, not all ~2.7k — sending the whole table is slow and noisy. Suffix
+  tokens (jr/ii/iii) are ignored.
+
+Configure the model with an `[ollama]` section in `credentials.ini`:
+
+```ini
+[ollama]
+host    = http://<jetson-ip>:11434
+model   = <chat-model-tag>
+timeout = 600
+think   = false
+```
+
+Env vars `OLLAMA_HOST` / `OLLAMA_MODEL` / `OLLAMA_TIMEOUT` / `OLLAMA_THINK` override
+the section. Defaults are `http://localhost:11434`, `llama3.1`, 600s, false. The
+model must be a **chat/instruct** model — an embedding model (e.g.
+nomic-embed-text) cannot produce proposals. `think = false` matters for reasoning
+models: without it a local one spent ~850 hidden tokens per three candidates at
+~11 tok/s.
+
+## Runbook
+
+Almost all of this is one-way and automatic; the only routine human step is
+clearing a merge/rename queue that is usually empty. `[auto]` is unattended, ✋
+is a human.
+
+```
+DAILY (after the source jobs) — one call, fully automatic
+════════════════════════════════════════════════════════════
+ [auto]  source jobs write nba.* / statyx.* / fty.*
+            │
+ [auto]      ▼
+         sync_player_identity()
+            │
+            ├─(1) conform_player_ids()      fold names in Python, attach exact
+            │                                matches, mint genuinely new names
+            │
+            ├─(2) backlog empty?  ── yes ──► skip the model entirely (most days)
+            │        │ no
+ [auto]      │        ▼
+            │     review_player_identities(origin="backlog")
+            │        └─ asks the model, writes proposals to
+            │           util.player_identity_review   (STAGING ONLY)
+            │
+            ├─(3) apply_player_identity_reviews()
+            │        ├─ link / new, same-name, >=0.9  ──► applied automatically
+            │        └─ merge / rename  ──► LEFT PENDING (see ✋ below)
+            │
+            └─(4) check_player_identity()   expect 0 / 0 / 0
+```
+
+```
+THE ONLY ROUTINE HUMAN STEP  ✋   (usually empty; a few times a season)
+════════════════════════════════════════════════════════════
+ ✋  SELECT * FROM util.player_identity_review WHERE status='pending';
+ ✋  accept: UPDATE ... SET status='accepted';   reject: SET status='rejected';
+         │
+         ▼
+     the next sync_player_identity() applies the accepted ones.
+     (This is the Jameer Nelson Sr/Jr safety: the model cannot merge two people.)
+```
+
+```
+ONE-TIME / DEPLOY — not part of the daily loop
+════════════════════════════════════════════════════════════
+ ✅ audit pass (review_player_identities(origin="audit"))
+ ✅ hand corrections applied; postgres and cockroach aligned at 2725 / 5070
+ ✅ util.player_identity_review + util.player_identity_check on both DBs
+ ✋ once, all infra: push sports-hub, bump nba_cockroach_db's uv.lock and
+    rebuild the image, and set the cockroach sections' dialect=cockroachdb
+    on the NUC. Until then the runner logs a warning and skips (2)/(3).
+```
+
+The mental model is three lines: **automatic** (source jobs → `sync_player_identity()`
+runs itself every day); **human, rare** (clear the merge/rename queue when non-empty);
+**one-time, done** (audit, cockroach alignment, deploy).
+
+One call does the routine, after the jobs that write the source tables:
+
+```python
+hub.util.sync_player_identity()
+# {'backlog': 0, 'staged': 0, 'applied': 0,
+#  'checks': {'players_owning_nothing': 0, 'backlog': 0, 'colliding_names': 0}}
+```
+
+It runs `conform_player_ids()`, and **only if the backlog is non-empty** runs
+`review_player_identities(origin='backlog')`, then `apply_player_identity_reviews()`
+and `check_player_identity()`. Nothing destructive happens on its own: the review
+only stages, and apply will not merge or rename without a human's `status='accepted'`.
+
+**Cadence: daily, right after the source jobs.** It is a no-op most days — the
+deterministic matcher is seconds, and the model is only called when
+`util.unmatched_player_source_vw` is non-empty, which is a few rows a season.
+There is deliberately no `util.update_schedule` row: that table has no cadence
+column and the runner drives everything daily, and the daily jobs are already the
+detector. With `sync_player_identity()` the same is true for the review step.
+
+The one thing a human still does is clear the merge/rename queue when it is not
+empty:
+
+```sql
+-- look
+SELECT review_id, source_name, proposal, target_player_key, reason
+FROM util.player_identity_review WHERE status='pending';
+-- accept the ones you agree with, then
+UPDATE util.player_identity_review SET status='accepted' WHERE review_id IN (...);
+```
+
+`sync_player_identity()` picks accepted rows up on its next run. Reject the rest
+with `status='rejected'`.
+
+One-time (already done on this data): `review_player_identities(origin='audit')`
+to find ids that are *already* mapped but wrong — the backlog cannot see those.
+
+Rebuild from scratch: `build_player_identity.sql` → `build_player_identity()` →
+`build_player_identity_views.sql` → `conform_player_ids()` →
+`seed_player_identity_review.sql` + `apply_player_identity_reviews()` for the
+hand corrections.
 
 ## Verified state
 
@@ -577,6 +720,12 @@ merges are not yet applied.
 
 ## Outstanding
 
+- **TODO — when `conformed_player_id` is dropped, delete `build_player_identity()`.**
+  `UtilComponent.build_player_identity()` is the only thing that reads the
+  retired table (postgres `util."conformed_player_id_RETIRED"`, cockroach
+  `util.conformed_player_id`), and its sole purpose is the rebuild path that the
+  drop gives up. Remove the method and this README's references to it at the same
+  time. Nothing in the daily loop depends on it.
 - **`ctx.cur_season` is hardcoded** to `"2025-26"` at `context.py:21` with the
   `nba_parameters` lines commented out, while three ESPN leagues are already
   registered for 2026-27 (with no rows fetched yet). Everything above is
@@ -601,8 +750,10 @@ merges are not yet applied.
   table — deleting every espn mapping and re-resolving lost 23 of them and
   minted 21 spurious players. **So back up `player_source_id`; the retired table
   is a convenience, not the system of record.**
-- `utility.deduplicate_tables` is still dead code: it takes a `db_con` with
-  `.db_con` and `.cur_season`, attributes from the pre-split god-object.
+- `utility.deduplicate_tables` is unused but not broken: its body correctly
+  reads `self.db` / `self.ctx.cur_season`. Kept as a self-contained utility;
+  the earlier note calling it pre-split god-object code no longer applied once
+  the components were separated.
 
 ## league_byes: fixed and backfilled for every ESPN league-season
 
@@ -771,10 +922,20 @@ data regardless of the season asked for. No corruption:
 ## Files
 
 - `build_fty_dev.sql` — the schema, idempotent
-- `build_player_identity.sql` — `util.norm_name`, the two identity tables, and
-  the seed from `util.conformed_player_id`. **Not idempotent** — it creates the
-  tables; drop them first to re-run
+- `build_player_identity.sql` — the two identity tables (DDL only). **Not
+  idempotent** — drop the tables to re-run. Seeding from
+  `util.conformed_player_id_RETIRED` is now `UtilComponent.build_player_identity()`,
+  in Python so no SQL function is needed
 - `build_player_identity_views.sql` — the directory, activity and backlog views
+- `build_player_identity_review.sql` — `util.player_identity_review`, the staging
+  table for model-proposed corrections. Idempotent (`IF NOT EXISTS`)
+- `seed_player_identity_review.sql` — the hand-audited corrections, re-runnable
+  (`ON CONFLICT DO NOTHING`); reapply after a rebuild
+- `build_player_identity_check.sql` — `util.player_identity_check`, the two
+  DB-native integrity checks as a view (`SELECT * ... WHERE failures > 0` should
+  return no rows). The third, `colliding_names`, is in Python:
+  `UtilComponent.check_player_identity()`
+- `player_identity_ops.sql` — manual recipes for operating the identity tables
 - `one-grain-two-formats.html` — source for the design diagram
 - `superseded/` — earlier drafts, kept for history. **Do not run them:** both
   target `fty` rather than `fty_dev`, and predate the pct, `is_scored` and
