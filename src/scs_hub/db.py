@@ -3,7 +3,7 @@ import configparser
 import sqlalchemy
 import polars as pl
 
-from sports_hub.config import credentials_path, ensure_credentials_file
+from scs_hub.config import credentials_path, ensure_credentials_file
 
 logger = logging.getLogger(__name__)
 

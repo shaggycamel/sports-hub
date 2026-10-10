@@ -2,18 +2,18 @@ import os
 import configparser
 import polars as pl
 
-from sports_hub.config import credentials_path, ensure_credentials_file
-from sports_hub.statyx_client._async import run_coro
-from sports_hub.statyx_client._client import StatyxClient
-from sports_hub.statyx_client.endpoints import BASE_URLS, ENDPOINTS
+from scs_hub.config import credentials_path, ensure_credentials_file
+from scs_hub.statyx_client._async import run_coro
+from scs_hub.statyx_client._client import StatyxClient
+from scs_hub.statyx_client.endpoints import BASE_URLS, ENDPOINTS
 
 
 def _load_api_key(api_key: str | None, ini_path: str | None) -> str:
     """
     Resolution order: explicit api_key arg > STATYX_API_KEY env var >
     credentials.ini (section [statyx], key 'key') at `ini_path` or the
-    default ~/.config/sports-hub-credentials.ini. `ini_path` is resolved via
-    config.credentials_path, so SPORTS_HUB_CREDENTIALS can point at a mounted
+    default ~/.config/scs_hub_credentials.ini. `ini_path` is resolved via
+    config.credentials_path, so SCS_HUB_CREDENTIALS can point at a mounted
     file instead (containers/CI).
     Matches the credential pattern already used elsewhere (e.g. dataHub's
     _db_connect), so a project's existing credentials.ini keeps working as-is.

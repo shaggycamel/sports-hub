@@ -3,7 +3,7 @@ import datetime as dt
 import polars as pl
 from yfpy.query import YahooFantasySportsQuery as yfpy
 
-from sports_hub.fty_handlers.base import FtyHandler
+from scs_hub.fty_handlers.base import FtyHandler
 
 
 class YahooNbaHandler(FtyHandler):

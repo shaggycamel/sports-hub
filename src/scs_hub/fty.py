@@ -2,7 +2,7 @@ import configparser
 import logging
 
 import polars as pl
-from sports_hub.fty_handlers import HANDLERS
+from scs_hub.fty_handlers import HANDLERS
 
 logger = logging.getLogger(__name__)
 

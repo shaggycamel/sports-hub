@@ -4,7 +4,7 @@ import logging
 import polars as pl
 import polars.selectors as cs
 import janitor.polars  # noqa: F401  (registers .clean_names() on pl.DataFrame)
-from sports_hub.statyx_client import StatyxPipeline, infer_dtypes
+from scs_hub.statyx_client import StatyxPipeline, infer_dtypes
 
 logger = logging.getLogger(__name__)
 

@@ -17,9 +17,9 @@ because those rows are partial (see Verification). A rebuild alone therefore
 leaves you with reference data and no matchup history.
 
 ```python
-from sports_hub.db import Database
-from sports_hub.context import Context
-from sports_hub.fty import FtyComponent
+from scs_hub.db import Database
+from scs_hub.context import Context
+from scs_hub.fty import FtyComponent
 
 db = Database(db_con="postgres")
 raw = db.engine.raw_connection()
@@ -475,7 +475,7 @@ duplicated players. Hence `norm_name()`, which every match goes through.
 
 > **The fold is Python now, not SQL.** `util.norm_name` (a `translate()` list
 > plus `regexp_replace`) was replaced by `norm_name()` in
-> `src/sports_hub/utility.py`. The SQL version silently DELETED any diacritic it
+> `src/scs_hub/utility.py`. The SQL version silently DELETED any diacritic it
 > did not name (`ć ā đ ņ Ş ū …`), so "Boban Marjanović" folded to `bobanmarjanovi`
 > against espn's `bobanmarjanovic` and split the player. The Python version uses
 > `unicodedata.normalize('NFKD')`, which needs no list, and folds the letters
@@ -609,7 +609,7 @@ ONE-TIME / DEPLOY — not part of the daily loop
  ✅ audit pass (review_player_identities(origin="audit"))
  ✅ hand corrections applied; postgres and cockroach aligned at 2725 / 5070
  ✅ util.player_identity_review + util.player_identity_check on both DBs
- ✋ once, all infra: push sports-hub, bump nba_cockroach_db's uv.lock and
+ ✋ once, all infra: push scs-hub, bump nba_cockroach_db's uv.lock and
     rebuild the image, and set the cockroach sections' dialect=cockroachdb
     on the NUC. Until then the runner logs a warning and skips (2)/(3).
 ```

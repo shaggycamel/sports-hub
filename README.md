@@ -1,1 +1,1 @@
-# sports-hub
+# scs-hub

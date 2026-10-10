@@ -1,4 +1,4 @@
-from sports_hub.statyx_client.transforms import (
+from scs_hub.statyx_client.transforms import (
     flatten_distributions,
     flatten_shotmap,
     flatten_team_shot_locations,

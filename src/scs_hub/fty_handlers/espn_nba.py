@@ -4,7 +4,7 @@ import polars as pl
 import espn_api.basketball as bb
 from espn_api.basketball.constant import POSITION_MAP, STATS_MAP
 
-from sports_hub.fty_handlers.base import FtyHandler
+from scs_hub.fty_handlers.base import FtyHandler
 
 # ESPN reports the winning side of a matchup, not each competitor's result.
 # UNDECIDED (an unplayed or in-progress period) is absent deliberately, so it

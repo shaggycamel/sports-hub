@@ -1,12 +1,12 @@
 import logging
 
 import polars as pl
-from sports_hub.db import Database
-from sports_hub.context import Context
-from sports_hub.nba import NBAComponent
-from sports_hub.fty import FtyComponent
-from sports_hub.statyx import StatyxComponent
-from sports_hub.utility import UtilComponent
+from scs_hub.db import Database
+from scs_hub.context import Context
+from scs_hub.nba import NBAComponent
+from scs_hub.fty import FtyComponent
+from scs_hub.statyx import StatyxComponent
+from scs_hub.utility import UtilComponent
 
 
 class SportsHub:
@@ -34,7 +34,7 @@ class SportsHub:
             format="%(asctime)s %(levelname)-7s %(name)s  %(message)s",
             datefmt="%H:%M:%S",
         )
-        logging.getLogger("sports_hub").setLevel(logging.INFO)
+        logging.getLogger("scs_hub").setLevel(logging.INFO)
 
         self.db = Database(db_con, ini_path)
         self.ctx = Context(self.db)
