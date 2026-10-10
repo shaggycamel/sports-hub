@@ -4,7 +4,7 @@
 -- schema and view names it had BEFORE that promotion; the three views it defines
 -- (fty_categories_vw, matchup_category_vw, fty_matchup_box_score_vw) do not match the nine
 -- views that now live in fty. The system of record for views is
--- ~/git/nba_cockroach_db/sql/views/, applied with that repo's scripts/apply_views.py.
+-- ~/shaggy_camel_sports/nba/database/sql/views/, applied with that repo's scripts/apply_views.py.
 -- Kept for the design history only.
 --
 -- fty_dev: working schema for the points-league redesign.

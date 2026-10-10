@@ -309,7 +309,7 @@ Yahoo's handler was left alone beyond the schema threading; it is out of scope.
 
 - `league`, `league_categories`, `league_competitor` and `league_matchup_dates`
   need no `update_schedule` rows: they are derived once at the start of a season.
-- **Five views were never ported**, and belong to the nba.shiny dashboard rather
+- **Five views were never ported**, and belong to the league dashboard (scs.nba.fty.league_dash) rather
   than here: `fty_base_vw`, `fty_free_agents_vw`, `fty_league_schedule_vw`,
   `fty_recent_activity_vw`, `fty_team_roster_schedule_vw`. None of them touch
   anything that changed — between them they read only `league`,
@@ -324,7 +324,7 @@ Yahoo's handler was left alone beyond the schema threading; it is out of scope.
   untouched. Both new writers build frames from an explicit `pl.DataFrame` schema,
   so their column order is already deterministic.
 
-## Contract changes for the nba.shiny dashboard
+## Contract changes for the league dashboard
 
 The five dashboard views port across unchanged. Three things do affect the
 dashboard, and are worth reading before the schemas swap.
@@ -609,7 +609,7 @@ ONE-TIME / DEPLOY — not part of the daily loop
  ✅ audit pass (review_player_identities(origin="audit"))
  ✅ hand corrections applied; postgres and cockroach aligned at 2725 / 5070
  ✅ util.player_identity_review + util.player_identity_check on both DBs
- ✋ once, all infra: push scs-hub, bump nba_cockroach_db's uv.lock and
+ ✋ once, all infra: push scs-hub, bump scs.nba.database's uv.lock and
     rebuild the image, and set the cockroach sections' dialect=cockroachdb
     on the NUC. Until then the runner logs a warning and skips (2)/(3).
 ```
